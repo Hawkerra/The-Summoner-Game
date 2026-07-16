@@ -1,0 +1,60 @@
+# Chub Stage metadata for The Summoner Game.
+
+project_name: "The Summoner Game"
+
+tagline: "A strange app on your phone. It summons real people. The game has already begun."
+
+visibility: 'UNLISTED'
+
+# 'ADJACENT' | 'NONE' | 'COVER' | 'FULLSCREEN'
+position: 'FULLSCREEN'
+
+tags:
+ - 'NSFW'
+ - 'Stage'
+ - 'Game'
+ - 'Modern'
+ - 'Gacha'
+ - 'Slice of Life'
+ - 'Simulation'
+
+# TODO: full creator_notes rewrite is a later content task. Placeholder for now.
+creator_notes: "The Summoner Game - a narrative gacha where the summons are real people. Work in progress."
+
+config_schema:
+  type: object
+  properties:
+    beta_mode:
+      title: Beta Mode
+      description: Enable experimental beta features.
+      type: string
+      default: "False"
+      enum: ["True", "False"]
+
+# State schema carried over from baseline; will be revised as systems are converted.
+state_schema:
+  init:
+    type: object
+    properties:
+      grid:
+        type: string
+  message:
+    type: object
+    properties:
+      angry:
+        type: boolean
+        default: true
+  chat:
+    type: object
+    properties:
+      visited:
+        type: array
+        items:
+          type: integer
+
+# Points the deploy workflow at THIS repo.
+github_path: 'https://github.com/Hawkerra/The-Summoner-Game'
+
+# extension_id intentionally omitted: the deploy workflow will mint a fresh
+# Chub extension on first push and write the new id back here automatically.
+# Do NOT paste the old SPIRE extension_id here or pushes will target that project.

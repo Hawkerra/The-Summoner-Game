@@ -1,0 +1,551 @@
+:root {
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  
+  /* Theme Colors - Cyan/Green Palette */
+  --color-primary: #b066ff;
+  --color-primary-dark: #9440e8;
+  --color-primary-darker: #7a2ecc;
+  --color-primary-light: #a259f7;
+  --color-primary-pale: #e3ccff;
+  --color-primary-very-pale: #f5edff;
+  
+  /* Opacity variants */
+  --color-primary-05: rgba(176, 102, 255, 0.05);
+  --color-primary-08: rgba(176, 102, 255, 0.08);
+  --color-primary-10: rgba(176, 102, 255, 0.1);
+  --color-primary-12: rgba(176, 102, 255, 0.12);
+  --color-primary-15: rgba(176, 102, 255, 0.15);
+  --color-primary-20: rgba(176, 102, 255, 0.2);
+  --color-primary-30: rgba(176, 102, 255, 0.3);
+  --color-primary-40: rgba(176, 102, 255, 0.4);
+  --color-primary-50: rgba(176, 102, 255, 0.5);
+  
+  /* Secondary/Accent Colors */
+  --color-secondary: #e8c368;
+  --color-dialogue: #e8c368;
+  
+  /* Backgrounds - Dark Blue/Navy */
+  --bg-dark-blue: rgba(18, 8, 32, 0.9);
+  --bg-darker-blue: rgba(20, 12, 30, 0.95);
+  --bg-darkest-blue: rgba(0, 10, 20, 0.5);
+  --bg-navy-gradient: linear-gradient(45deg, #140a20 0%, #002244 100%);
+  --bg-glass-dark: rgba(0, 0, 0, 0.8);
+  --bg-glass-darker: rgba(0, 0, 0, 0.85);
+  
+  /* Text Colors */
+  --text-primary: #f3eaff;
+  --text-secondary: #ecdfff;
+  --text-pale: #f4ecff;
+  --text-muted: rgba(255, 255, 255, 0.9);
+  --text-very-muted: rgba(255, 255, 255, 0.6);
+  
+  /* Border & Shadow */
+  --border-primary: 2px solid var(--color-primary-12);
+  --border-primary-bright: 3px solid var(--color-primary);
+  --border-primary-dashed: 3px dashed var(--color-primary);
+  
+  --glow-primary: 0 0 20px var(--color-primary-30);
+  --glow-primary-strong: 0 0 40px var(--color-primary-40);
+  
+  /* Effects */
+  --backdrop-blur: blur(8px);
+}
+
+html, body, #root {
+  margin: 0;
+  padding: 0;
+}
+/* make box-sizing consistent so borders/padding don't add to element width and cause scrollbars */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+/* Stylized stat/grade display: jauntily-angled large letters with sharp drop shadow */
+.stat-list {
+  color: #e6fff0;
+}
+.stat-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: clamp(4px, 1vw, 12px);
+  height: 12.5%;
+  position: relative;
+  overflow: visible;
+}
+.stat-label,
+.section-header,
+.module-label {
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: rgba(255, 255, 255, 0.95);
+}
+
+.stat-label {
+  font-size: clamp(0.6rem, 1.5vmin, 0.9rem);
+  color: var(--color-primary);
+  text-shadow: 0 0 10px var(--color-primary-50);
+  z-index: 1;
+}
+
+.section-header {
+  font-size: 1rem;
+  color: var(--color-primary);
+}
+
+.module-label {
+  font-size: 14px;
+  color: var(--color-primary);
+  text-shadow: 0 0 8px var(--color-primary-50);
+}
+.stat-grade {
+  /* big, bold, skewed/rotated letter with a crisp drop shadow */
+  font-weight: 900;
+  font-size: clamp(1rem, 2.5vmin, 1.8rem);
+  line-height: 1;
+  display: inline-block;
+  padding: 0 0.2vmin;
+  border-radius: 2px;
+  /* crisp drop-shadow (no blur) for a sharp cutout look */
+  text-shadow: clamp(2px, 0.6vmin, 4px) clamp(2px, 0.6vmin, 4px) 0 rgba(0,0,0,0.88);
+  /* jaunty tilt */
+  transform: skewX(-12deg) rotate(-8deg);
+  transform-origin: 50% 50%;
+  /* use solid color fill per grade variants below */
+  color: #ffffff;
+  position: relative;
+  z-index: 2;
+}
+
+/* grade color variants (solid fills) */
+.stat-grade[data-grade^="A"] { color: #ffdd2f; }
+.stat-grade[data-grade^="B"] { color: #3bd3ff; }
+.stat-grade[data-grade^="C"] { color: #d0d0d0; }
+.stat-grade[data-grade^="D"] { color: #ffb47a; }
+.stat-grade[data-grade^="F"] { color: #ff6b6b; }
+
+/* Media query no longer needed - using responsive viewport units */
+
+/* Shimmer animation for active turn indicator */
+@keyframes shimmer {
+  0% {
+    left: -100%;
+  }
+  100% {
+    left: 100%;
+  }
+}
+
+.turn-shimmer {
+  animation: shimmer 2s infinite;
+}
+
+/* Floating animation for reserve actors */
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0px) translateX(0px) rotate(0deg);
+  }
+  25% {
+    transform: translateY(-3px) translateX(1px) rotate(0.5deg);
+  }
+  50% {
+    transform: translateY(-1px) translateX(-1px) rotate(-0.3deg);
+  }
+  75% {
+    transform: translateY(-4px) translateX(0.5px) rotate(0.2deg);
+  }
+}
+
+/* Ethereal sheen animation for reserve actors */
+@keyframes etherealSheen {
+  0% {
+    left: -100%;
+    opacity: 0;
+  }
+  20% {
+    opacity: 0.6;
+  }
+  80% {
+    opacity: 0.6;
+  }
+  100% {
+    left: 100%;
+    opacity: 0;
+  }
+}
+
+/* Loading pulse animation for echo slots */
+@keyframes loadingPulse {
+  0%, 100% {
+    box-shadow: inset 0 0 20px rgba(255, 170, 0, 0.3);
+  }
+  50% {
+    box-shadow: inset 0 0 40px rgba(255, 170, 0, 0.6);
+  }
+}
+
+/* Scanline animation for remote actors */
+@keyframes scanlineMove {
+  0% {
+    mask-position: 0% 100%;
+    -webkit-mask-position: 0% 100%;
+  }
+  100% {
+    mask-position: 0% -100%;
+    -webkit-mask-position: 0% -100%;
+  }
+}
+
+.reserve-actor {
+  animation: float 6s ease-in-out infinite;
+  position: relative;
+  overflow: hidden;
+}
+
+.reserve-actor::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.5) 30%, rgba(255, 255, 255, 0.8) 50%, rgba(255, 255, 255, 0.5) 70%, transparent 100%);
+  animation: etherealSheen 4s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.loading-echo-slot {
+  animation: loadingPulse 2s ease-in-out infinite;
+  position: relative;
+  overflow: hidden;
+}
+
+.loading-echo-slot::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(
+    90deg, 
+    transparent 0%, 
+    color-mix(in srgb, var(--shimmer-color, #ffaa00) 40%, transparent) 30%, 
+    color-mix(in srgb, var(--shimmer-color, #ffaa00) 80%, transparent) 50%, 
+    color-mix(in srgb, var(--shimmer-color, #ffaa00) 40%, transparent) 70%, 
+    transparent 100%
+  );
+  animation: shimmer 2.5s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.remove-actor-btn {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  width: 20px;
+  height: 20px;
+  background: rgba(255, 60, 60, 0.9);
+  border: 2px solid #fff;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: bold;
+  color: #fff;
+  z-index: 10;
+  transition: all 0.2s ease;
+}
+
+.remove-actor-btn:hover {
+  background: rgba(255, 30, 30, 1);
+  transform: scale(1.1);
+}
+
+/* ===============================================
+   SHARED COMPONENT STYLES
+   =============================================== */
+
+/* Glass Panel - Semi-transparent panels with blur */
+.glass-panel {
+  background: var(--bg-darker-blue);
+  border: var(--border-primary);
+  border-radius: 12px;
+  backdrop-filter: var(--backdrop-blur);
+  color: var(--text-primary);
+}
+
+.glass-panel-bright {
+  background: var(--bg-darker-blue);
+  border: var(--border-primary-bright);
+  border-radius: 12px;
+  backdrop-filter: var(--backdrop-blur);
+  color: var(--text-primary);
+  box-shadow: var(--glow-primary);
+}
+
+/* Card with gradient border effect */
+.card-glowing {
+  position: relative;
+  background: linear-gradient(135deg, var(--color-primary-15) 0%, rgba(0, 200, 100, 0.08) 100%);
+  border: 2px solid var(--color-primary);
+  border-radius: 16px;
+  
+  &::before {
+    content: '';
+    position: absolute;
+    top: -2px;
+    left: -2px;
+    right: -2px;
+    bottom: -2px;
+    background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-30) 100%);
+    border-radius: 18px;
+    z-index: -1;
+    filter: blur(4px);
+    opacity: 0.6;
+  }
+}
+
+/* Grid Background Overlay */
+.grid-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-image: 
+    linear-gradient(var(--color-primary-08) 1px, transparent 1px),
+    linear-gradient(90deg, var(--color-primary-08) 1px, transparent 1px);
+  background-size: 60px 60px;
+  background-position: 0 0;
+  background-repeat: repeat;
+  pointer-events: none;
+}
+
+/* Button Base Styles */
+.btn-primary {
+  padding: 12px 18px;
+  border-radius: 8px;
+  border: 2px solid var(--color-primary-15);
+  background: var(--color-primary);
+  color: #1a0533;
+  font-weight: 800;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  
+  &:hover:not(:disabled) {
+    background: var(--color-primary-light);
+    transform: scale(1.03);
+  }
+  
+  &:disabled {
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--color-primary-40);
+    cursor: not-allowed;
+  }
+}
+
+.btn-secondary {
+  padding: 12px 18px;
+  border-radius: 8px;
+  border: 2px solid rgba(255, 255, 255, 0.06);
+  background: rgba(0, 0, 0, 0.5);
+  color: #fff;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  
+  &:hover {
+    background: rgba(0, 0, 0, 0.7);
+  }
+}
+
+/* Shared button header style for menu buttons and expandable headers */
+.btn-header-base {
+  padding: 15px;
+  border-radius: 5px;
+  border: var(--border-primary-bright);
+  background: transparent;
+  color: var(--color-primary);
+  font-size: 16px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-shadow: 0 1px 2px var(--color-primary-30);
+  
+  &:hover:not(:disabled) {
+    background: var(--color-primary-20);
+  }
+  
+  &:disabled {
+    border-color: var(--color-primary-30);
+    color: var(--color-primary-40);
+    cursor: not-allowed;
+    opacity: 0.6;
+  }
+}
+
+.btn-menu {
+  @extend .btn-header-base;
+  padding: 15px 25px;
+  border-radius: 8px;
+  font-size: 18px;
+  text-align: center;
+  
+  &:hover:not(:disabled) {
+    background: var(--color-primary-20);
+    transform: translateX(10px);
+  }
+}
+
+/* Icon Button Styles */
+.icon-button {
+  color: #cfe;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  
+  &:disabled {
+    color: rgba(255, 255, 255, 0.3);
+  }
+}
+
+/* Expandable Menu Item */
+.menu-item-header {
+  @extend .btn-header-base;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  text-align: left;
+  
+  &.expanded {
+    background: var(--color-primary-20);
+  }
+  
+  .chevron {
+    transition: transform 0.2s ease;
+    
+    &.rotated {
+      transform: rotate(180deg);
+    }
+  }
+}
+
+/* Turn Progress Indicator */
+.turn-indicator {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+/* Module/Tile Styles */
+.module-tile {
+  @extend .module-label;
+  border: 3px solid var(--color-primary);
+  border-radius: 10px;
+  cursor: pointer;
+  overflow: hidden;
+  transition: all 0.2s ease;
+  
+  &:hover {
+    transform: scale(1.03);
+  }
+}
+
+.add-module-placeholder {
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.45);
+  border: 3px dashed var(--color-primary);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.95);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  
+  &:hover {
+    background: rgba(0, 0, 0, 0.6);
+    border-color: var(--color-primary-light);
+  }
+}
+
+/* Text Input Styles */
+.text-input-primary {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0.01));
+  color: var(--text-pale);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+  
+  &:hover {
+    border-color: rgba(255, 255, 255, 0.12);
+  }
+  
+  &:focus {
+    border-color: var(--color-primary-30);
+    outline: none;
+  }
+  
+  &:disabled {
+    color: var(--text-very-muted);
+    border-color: rgba(255, 255, 255, 0.04);
+  }
+  
+  &::placeholder {
+    color: rgba(255, 255, 255, 0.5);
+  }
+}
+
+/* Title Text */
+.title-primary {
+  color: var(--color-primary);
+  text-shadow: 0 0 20px var(--color-primary-50);
+  font-weight: 900;
+  letter-spacing: 0.05em;
+}
+
+.title-glow {
+  color: var(--color-primary);
+  text-shadow: 0 2px 4px var(--color-primary-30);
+}
+
+/* Chip/Badge Styles */
+.chip-info {
+  font-weight: 700;
+  color: var(--color-primary-pale);
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.03);
+  border-radius: 16px;
+  padding: 4px 12px;
+}
+
+/* Actor/Character Card */
+.actor-card {
+  padding: 12px;
+  border: 2px solid var(--color-primary-20);
+  border-radius: 8px;
+  background: var(--bg-darkest-blue);
+  cursor: grab;
+  transition: all 0.2s ease;
+  
+  &:hover {
+    background: var(--color-primary-15);
+    border-color: var(--color-primary-50);
+    transform: translateX(10px) scale(1.02);
+  }
+  
+  &:active {
+    cursor: grabbing;
+  }
+  
+  &.dragging {
+    opacity: 0.4;
+    transform: scale(0.95);
+  }
+}
