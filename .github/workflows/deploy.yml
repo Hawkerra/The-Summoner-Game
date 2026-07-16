@@ -89,6 +89,7 @@ jobs:
         if: ${{ !contains(github.repository, 'template') }}
         run: |
           sudo apt-get install uuid-runtime
+          shopt -s nullglob
           for file in public/characters/*.yaml; do
             if grep -q 'project_uuid:' "$file"; then
               echo "project has uuid."
@@ -96,11 +97,6 @@ jobs:
               uuid=$(uuidgen)
               echo -e "\nproject_uuid: $uuid\n" >> "$file"
               echo "Added project_uuid to $file"
-              git config --local user.email "action@github.com"
-              git config --local user.name "GitHub Action"
-              git add $file
-              git commit -m "Add project_uuid to YAML file"
-              git push
             fi
           done
       - name: Install dependencies
