@@ -58,3 +58,6 @@ github_path: 'https://github.com/Hawkerra/The-Summoner-Game'
 # extension_id intentionally omitted: the deploy workflow will mint a fresh
 # Chub extension on first push and write the new id back here automatically.
 # Do NOT paste the old SPIRE extension_id here or pushes will target that project.
+
+extension_id: 'the-summoner-game-3d1963220b9c'
+
