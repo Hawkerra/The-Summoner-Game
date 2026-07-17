@@ -81,21 +81,23 @@ export const EchoScreen: FC<EchoScreenProps> = ({ stage, setScreenType }) => {
 		}, 260);
 	};
 
-	const onDragEnd = (_e: any, info: { offset: { x: number } }) => {
-		const dx = info.offset.x;
-		if (dx > SWIPE_THRESHOLD) { doAccept(); return; }
-		if (dx < -SWIPE_THRESHOLD) { doReject(); return; }
-		// Not far enough - spring the card back to center.
-		animate(x, 0, { type: 'spring', stiffness: 500, damping: 34 });
+	const onDragEnd = (_e: any, info: { offset?: { x: number }; velocity?: { x: number } }) => {
+		const dx = info?.offset?.x ?? 0;
+		const vx = info?.velocity?.x ?? 0;
+		if (dx > SWIPE_THRESHOLD || (dx > 40 && vx > 600)) { doAccept(); return; }
+		if (dx < -SWIPE_THRESHOLD || (dx < -40 && vx < -600)) { doReject(); return; }
+		// Not far enough - spring the card firmly back to center.
+		animate(x, 0, { type: 'spring', stiffness: 550, damping: 40 });
 	};
 
-	const portraitUrl = candidate ? candidate.getEmotionImage('neutral', stage()) : '';
-	const imageReady = candidate ? candidate.isPrimaryImageReady : false;
+	// Show the bot card's own image directly (like SPIRE/PARC preview cards) - no generation,
+	// no "manifesting" placeholder. A game sprite is only made later, manually, from the detail view.
+	const portraitUrl = candidate ? (candidate.avatarImageUrl || candidate.getEmotionImage('neutral', stage())) : '';
 	const themeColor = candidate?.themeColor || '#b066ff';
 
 	return (
 		<div style={{ position: 'relative', width: '100vw', height: '100vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-			<BlurredBackground imageUrl={candidate ? candidate.getEmotionImage('neutral', stage()) : ''} />
+			<BlurredBackground imageUrl={portraitUrl} />
 
 			{/* Header */}
 			<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', zIndex: 2 }}>
@@ -110,7 +112,8 @@ export const EchoScreen: FC<EchoScreenProps> = ({ stage, setScreenType }) => {
 					<motion.div
 						key={candidate.id}
 						drag="x"
-						dragElastic={0.6}
+						dragMomentum={false}
+						dragElastic={1}
 						style={{ x, rotate, cursor: 'grab', touchAction: 'none' }}
 						onDragEnd={onDragEnd}
 						initial={{ scale: 0.9, opacity: 0 }}
@@ -119,7 +122,6 @@ export const EchoScreen: FC<EchoScreenProps> = ({ stage, setScreenType }) => {
 					>
 						{/* The phone */}
 						<div
-							onClick={() => setShowDetail(true)}
 							style={{
 								position: 'relative',
 								width: 'min(340px, 82vw)',
@@ -145,20 +147,6 @@ export const EchoScreen: FC<EchoScreenProps> = ({ stage, setScreenType }) => {
 								backgroundSize: 'cover',
 								backgroundPosition: 'center top',
 							}}>
-								{!imageReady && (
-									<div style={{
-										position: 'absolute', inset: 0, display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
-										paddingBottom: 12, background: 'linear-gradient(to top, rgba(11,7,18,0.85), transparent 45%)',
-									}}>
-										<motion.span
-											style={{ fontSize: '0.8rem', opacity: 0.85 }}
-											animate={{ opacity: [0.4, 1, 0.4] }}
-											transition={{ duration: 1.4, repeat: Infinity }}
-										>
-											materializing&hellip;
-										</motion.span>
-									</div>
-								)}
 								{/* swipe intent glows */}
 								<motion.div style={{ position: 'absolute', top: 14, left: 14, padding: '4px 10px', borderRadius: 8, border: '2px solid #ff5a7a', color: '#ff5a7a', fontWeight: 700, transform: 'rotate(-12deg)', opacity: rejectGlow }}>PASS</motion.div>
 								<motion.div style={{ position: 'absolute', top: 14, right: 14, padding: '4px 10px', borderRadius: 8, border: '2px solid #57e08a', color: '#57e08a', fontWeight: 700, transform: 'rotate(12deg)', opacity: acceptGlow }}>SUMMON</motion.div>
@@ -186,7 +174,7 @@ export const EchoScreen: FC<EchoScreenProps> = ({ stage, setScreenType }) => {
 									})}
 								</div>
 
-								<div style={{ marginTop: 'auto', textAlign: 'center', fontSize: '0.7rem', opacity: 0.5 }}>tap for details</div>
+								<div style={{ marginTop: 'auto', textAlign: 'center', fontSize: '0.7rem', opacity: 0.4 }}>swipe to choose</div>
 							</div>
 						</div>
 
@@ -218,6 +206,11 @@ export const EchoScreen: FC<EchoScreenProps> = ({ stage, setScreenType }) => {
 					aria-label="Summon"
 					style={{ width: 72, height: 72, borderRadius: '50%', border: '2px solid #57e08a', background: 'rgba(87,224,138,0.14)', color: '#57e08a', fontSize: '1.7rem', cursor: candidate ? 'pointer' : 'default' }}
 				>&#10003;</button>
+			</div>
+
+			{/* details button - separate from the draggable phone so dragging never opens it */}
+			<div style={{ display: 'flex', justifyContent: 'center', paddingBottom: 22, zIndex: 2 }}>
+				<Button onClick={() => setShowDetail(true)} disabled={!candidate}>View details</Button>
 			</div>
 
 			{/* detail overlay - the "look before you decide" view */}
