@@ -1,7 +1,8 @@
 import {ReactElement} from "react";
-import {StageBase, StageResponse, InitialData, Message, UpdateBuilder} from "@chub-ai/stages-ts";
+import {StageBase, StageResponse, InitialData, Message, UpdateBuilder, AspectRatio} from "@chub-ai/stages-ts";
 import {LoadResponse} from "@chub-ai/stages-ts/dist/types/load";
 import Actor, { loadReserveActor, commitActorToEcho, Stat, generateAdditionalActorImages, loadReserveActorFromFullPath, ArtStyle, generateActorDecor, namesMatch, findBestNameMatch, generateBaseActorImage, getRole } from "./actors/Actor";
+import { GameLocation, createHomeLocation, createLocation, HOME_LOCATION_ID, ARCHIVE_AFTER_TURNS, DISCOVERABLE_PLACES } from "./Location";
 import Faction, { generateFactionModule, generateFactionRepresentative, loadReserveFaction } from "./factions/Faction";
 import { DEFAULT_GRID_WIDTH, DEFAULT_GRID_HEIGHT, Layout, MODULE_TEMPLATES, StationStat, createModule, registerFactionModule, ModuleIntrinsic, generateModule, generateModuleImage, Module, registerModule, FLOOR_BUILD_COSTS, MAX_FLOORS } from './Module';
 import { BaseScreen, ScreenType } from "./screens/BaseScreen";
@@ -54,6 +55,8 @@ export type SaveType = {
     typeOutSpeed?: number;
     reserveActors?: Actor[];
     activeActorId?: string; // The one summon currently active in the world (Summoner Game: one at a time). Others sit in the void.
+    locations?: {[id: string]: GameLocation}; // The location graph (Home is root); replaces the tower grid.
+    currentLocationId?: string; // Where the player currently is.
     language?: string;
     tone?: string;
     disableImpersonation?: boolean;
@@ -325,7 +328,8 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
                 description: `Every respectable tower comes haunted, and the Spire is no exception! Your resident tower spirit has been bound to these stones since long before your arrival and knows the Spire's workings intimately, so you don't have to. ` +
                 `Fair warning: two centuries of empty halls have left them a touch capricious - expect teasing, dramatics, and open delight in your confusion, as your suffering is (by their own cheerful admission) the finest entertainment they've had in two hundred years. ` +
                 `Rest assured the binding compels honest service no matter how they grumble, and those who earn their trust report the needling softens into something almost like fondness. They are especially fond of introducing you as the late Magus's magic-order bride or groom.`}, 
-            echoes: [], actors: {}, factions: {}, layout: layout, day: 1, turn: 0, currentSkit: undefined, typeOutSpeed: this.DEFAULT_TYPE_OUT_SPEED, reserveActors: [] };
+            echoes: [], actors: {}, factions: {}, layout: layout, day: 1, turn: 0, currentSkit: undefined, typeOutSpeed: this.DEFAULT_TYPE_OUT_SPEED, reserveActors: [],
+            locations: { [HOME_LOCATION_ID]: createHomeLocation(0) }, currentLocationId: HOME_LOCATION_ID };
 
         // ensure at least one save exists and has a layout
         if (!this.saves.length) {
@@ -1116,6 +1120,88 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
         save.reserveActors = (save.reserveActors || []).filter(a => a.id !== actor.id);
         this.saveGame();
         this.loadReserveActors();
+    }
+
+    // ---- Location graph -------------------------------------------------------------------------
+
+    /** All locations, self-healing: guarantees Home exists (older saves / rehydration). */
+    getLocations(): {[id: string]: GameLocation} {
+        const save = this.getSave();
+        if (!save.locations) save.locations = {};
+        if (!save.locations[HOME_LOCATION_ID]) {
+            save.locations[HOME_LOCATION_ID] = createHomeLocation(save.turn || 0);
+        }
+        if (!save.currentLocationId || !save.locations[save.currentLocationId]) {
+            save.currentLocationId = HOME_LOCATION_ID;
+        }
+        return save.locations;
+    }
+
+    getCurrentLocationId(): string {
+        this.getLocations();
+        return this.getSave().currentLocationId || HOME_LOCATION_ID;
+    }
+
+    getCurrentLocation(): GameLocation {
+        const locations = this.getLocations();
+        return locations[this.getCurrentLocationId()] || locations[HOME_LOCATION_ID];
+    }
+
+    /** Move to a location: mark it visited, run the archive sweep, generate its background if needed. */
+    travelToLocation(id: string): void {
+        const locations = this.getLocations();
+        const dest = locations[id];
+        if (!dest) return;
+        dest.archived = false;
+        dest.lastVisitedTurn = this.getSave().turn || 0;
+        this.getSave().currentLocationId = id;
+        this.archiveStaleLocations();
+        this.saveGame();
+        void this.ensureLocationBackground(dest);
+    }
+
+    /**
+     * Create a sub-location under a parent and attach it. This is the hook skit outcomes will call
+     * to birth discovered places (once Skit.ts is converted); the location screen's Explore action
+     * uses it now with curated placeholders.
+     */
+    spawnSubLocation(parentId: string, spec: { name: string; description: string; population?: string; tags?: string[] }): GameLocation {
+        const locations = this.getLocations();
+        const parent = locations[parentId] || locations[HOME_LOCATION_ID];
+        const loc = createLocation({ ...spec, parentId: parent.id, turn: this.getSave().turn || 0 });
+        locations[loc.id] = loc;
+        if (!parent.childIds.includes(loc.id)) parent.childIds.push(loc.id);
+        this.saveGame();
+        return loc;
+    }
+
+    /** Home never archives; any other location unvisited for ARCHIVE_AFTER_TURNS turns is archived. */
+    archiveStaleLocations(): void {
+        const turn = this.getSave().turn || 0;
+        for (const loc of Object.values(this.getLocations())) {
+            if (loc.isHome) { loc.archived = false; continue; }
+            loc.archived = (turn - loc.lastVisitedTurn) >= ARCHIVE_AFTER_TURNS;
+        }
+    }
+
+    /** Lazily generate a location background once, caching it on the location. Best-effort. */
+    async ensureLocationBackground(loc: GameLocation): Promise<void> {
+        if (loc.backgroundUrl || loc.backgroundPending) return;
+        if (this.getSave().disableDecorImages) return;
+        loc.backgroundPending = true;
+        try {
+            const url = await this.makeImage({
+                prompt: `A modern-world location background with no people in it: ${loc.name}. ${loc.description} ` +
+                    `Rendered as an atmospheric visual-novel background, empty of characters.`,
+                aspect_ratio: AspectRatio.WIDESCREEN_HORIZONTAL
+            }, '');
+            if (url) loc.backgroundUrl = url;
+        } catch (e) {
+            console.warn('Location background generation failed', e);
+        } finally {
+            loc.backgroundPending = false;
+            this.saveGame();
+        }
     }
 
     async loadReserveFactions() {
