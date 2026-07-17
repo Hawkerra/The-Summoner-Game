@@ -1,19 +1,21 @@
 /*
- * This is the screen where the player can view available echo pods and choose to wake a character.
+ * The summoning screen. The strange app presents one candidate at a time on a phone the summoner
+ * holds - a "person" the game claims it can pull into the real world. The player swipes it away to
+ * draw someone new, or accepts to bind them. Dating-app framing, one card at a time, no reserve list.
+ *
+ * Pass 3 build. Accept works WITHOUT a finished portrait (it backfills). Tapping the card opens a
+ * full detail view before deciding. The first summon is chosen via attenuation targeting; every
+ * summon after is whatever the app serves up.
  */
 import React, { FC } from 'react';
-import { motion } from 'framer-motion';
+import { motion, useMotionValue, useTransform, animate } from 'framer-motion';
 import { ScreenType } from './BaseScreen';
 import { Stage } from '../Stage';
-import { SkitType } from '../Skit';
-import Nameplate from '../components/Nameplate';
-import Actor, { generateActorDecor, Stat, ACTOR_STAT_ICONS } from '../actors/Actor';
+import Actor, { Stat, ACTOR_STAT_ICONS, CAPABILITY_STATS, isCapabilityStat } from '../actors/Actor';
 import { scoreToGrade } from '../utils';
 import { BlurredBackground } from '../components/BlurredBackground';
-import { ActorCarousel } from '../components/CarouselStub';
-import AuthorLink from '../components/AuthorLink';
-import { RemoveButton } from '../components/RemoveButton';
 import { Button } from '../components/UIComponents';
+import { ActorDetailScreen } from './ActorDetailScreen';
 
 interface EchoScreenProps {
 	stage: () => Stage;
@@ -21,477 +23,206 @@ interface EchoScreenProps {
 	isVerticalLayout: boolean;
 }
 
-export const EchoScreen: FC<EchoScreenProps> = ({stage, setScreenType, isVerticalLayout}) => {
+const SWIPE_THRESHOLD = 120;
 
-	const [selectedSlotIndex, setSelectedSlotIndex] = React.useState<number | null>(null);
-	const [expandedCandidateId, setExpandedCandidateId] = React.useState<string | null>(null);
-	const [refreshKey, setRefreshKey] = React.useState(0); // Force re-renders when data changes
-	const [selectedReserveActorId, setSelectedReserveActorId] = React.useState<string | null>(null); // For tap-to-select on mobile
-	const reserveActors = stage().getSave().reserveActors || [];
-	const echoSlots = stage().getEchoSlots();
+export const EchoScreen: FC<EchoScreenProps> = ({ stage, setScreenType }) => {
+	const [refreshKey, setRefreshKey] = React.useState(0);
+	const [loading, setLoading] = React.useState(false);
+	const [showDetail, setShowDetail] = React.useState(false);
+	const [leaving, setLeaving] = React.useState<null | 'accept' | 'reject'>(null);
 
-	const cancel = () => {
-		setScreenType(ScreenType.STATION);
-	};
+	const candidates = stage().getSave().reserveActors || [];
+	const candidate: Actor | null = candidates[0] || null;
 
-	// Handle Escape key to close the screen
+	// Swipe motion.
+	const x = useMotionValue(0);
+	const rotate = useTransform(x, [-260, 260], [-14, 14]);
+	const acceptGlow = useTransform(x, [0, SWIPE_THRESHOLD], [0, 1]);
+	const rejectGlow = useTransform(x, [-SWIPE_THRESHOLD, 0], [1, 0]);
+
+	const refresh = () => setRefreshKey(k => k + 1);
+
+	// Keep a candidate on deck: if the pool is empty, ask the app to serve one up.
 	React.useEffect(() => {
-		const handleKeyDown = (e: KeyboardEvent) => {
-			if (e.key === 'Escape') {
-				cancel();
-			}
-		};
+		if (!candidate && !loading) {
+			setLoading(true);
+			stage().loadReserveActors().finally(() => {
+				setLoading(false);
+				refresh();
+			});
+		}
+	}, [candidate, loading, refreshKey]);
 
-		window.addEventListener('keydown', handleKeyDown);
-		return () => {
-			window.removeEventListener('keydown', handleKeyDown);
-		};
+	React.useEffect(() => {
+		const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setScreenType(ScreenType.STATION); };
+		window.addEventListener('keydown', onKey);
+		return () => window.removeEventListener('keydown', onKey);
 	}, []);
 
-	const removeReserveActor = (actorId: string, e: React.MouseEvent) => {
-		e.stopPropagation();
-		e.preventDefault();
-		stage().getSave().reserveActors = (stage().getSave().reserveActors || []).filter(a => a.id !== actorId);
-		stage().saveGame();
-		stage().loadReserveActors();
-		setRefreshKey(prev => prev + 1); // Force re-render
+	const doAccept = () => {
+		if (!candidate) return;
+		setLeaving('accept');
+		const id = stage().acceptSummon(candidate);
+		// Route into the intro skit for the freshly bound summon.
+		setTimeout(() => { if (id) setScreenType(ScreenType.SKIT); }, 220);
 	};
 
-	const removeEchoActor = (actorId: string, e: React.MouseEvent) => {
-		e.stopPropagation();
-		e.preventDefault();
-		// Find the actor in echo slots
-		const actor = echoSlots.find(a => a?.id === actorId);
-		if (actor) {
-			// Remove from echo slot
-			stage().removeActorFromEcho(actorId, true);
-			// Add back to reserve actors if not already there
-			const reserveActors = stage().getSave().reserveActors || [];
-			if (!reserveActors.find(a => a.id === actorId)) {
-				stage().getSave().reserveActors = [...reserveActors, actor];
-				stage().saveGame();
-			}
-			setRefreshKey(prev => prev + 1); // Force re-render
-		}
-	};
-
-	const accept = () => {
-		const selected = selectedSlotIndex != null ? echoSlots[selectedSlotIndex] : null;
-		const firstRoom = stage().getSave().layout.getModulesWhere(m => m?.type === 'quarters' && !m?.ownerId)[0] || null;
-		if (selected && firstRoom && selected.isPrimaryImageReady) {
-			// Assign the selected actor to the first available room
-			firstRoom.ownerId = selected.id;
-			generateActorDecor(selected, firstRoom, stage());
-			// Set the actor's location to the echo room:
-			const sceneRoom = stage().getSave().layout.getModulesWhere(m => m.type === 'echo chamber')[0] || firstRoom;
-			selected.locationId = sceneRoom?.id || '';
-			stage().getSave().actors[selected.id] = selected;
-			// Remove from reserve actors and echo slots
-			stage().getSave().reserveActors = (stage().getSave().reserveActors || []).filter(a => a.id !== selected.id);
-			stage().removeActorFromEcho(selected.id, false);
-            stage().setSkit({
-                    type: SkitType.INTRO_CHARACTER,
-                    actorId: selected.id,
-                    moduleId: sceneRoom?.id,
-                    script: [],
-                    generating: true,
-                    context: {}
-			});
-			setScreenType(ScreenType.SKIT);
-		}
-	};
-
-	const handleDragStart = (e: React.DragEvent, actor: Actor) => {
-		e.dataTransfer.setData('application/json', JSON.stringify({
-			actorId: actor.id,
-			source: 'reserve'
-		}));
-
-		// Create custom drag image to show only the current card
-		const dragElement = e.currentTarget as HTMLElement;
-		const dragImage = dragElement.cloneNode(true) as HTMLElement;
-		dragImage.style.position = 'absolute';
-		dragImage.style.top = '-9999px';
-		dragImage.style.width = dragElement.offsetWidth + 'px';
-		dragImage.style.height = dragElement.offsetHeight + 'px';
-		document.body.appendChild(dragImage);
-		
-		e.dataTransfer.setDragImage(dragImage, dragElement.offsetWidth / 2, dragElement.offsetHeight / 2);
-		
-		// Clean up the temporary drag image after a short delay
+	const doReject = () => {
+		if (!candidate) return;
+		setLeaving('reject');
+		const rejected = candidate;
 		setTimeout(() => {
-			document.body.removeChild(dragImage);
-		}, 0);
+			stage().rejectSummon(rejected);
+			x.set(0);
+			setLeaving(null);
+			refresh();
+		}, 220);
 	};
 
-	const handleDragOver = (e: React.DragEvent) => {
-		e.preventDefault();
+	const onDragEnd = () => {
+		const dx = x.get();
+		if (dx > SWIPE_THRESHOLD) { doAccept(); return; }
+		if (dx < -SWIPE_THRESHOLD) { doReject(); return; }
+		animate(x, 0, { type: 'spring', stiffness: 300, damping: 30 });
 	};
 
-	const handleDropOnEchoSlot = async (e: React.DragEvent, slotIndex: number) => {
-		e.preventDefault();
-		const data = JSON.parse(e.dataTransfer.getData('application/json'));
-		console.log('Dropping echo onto slot');
-		console.log(data);
-		const actor = reserveActors.find(a => a.id === data.actorId) || echoSlots.find(a => a?.id === data.actorId);
-		console.log(actor);
-		if (actor) {
-			// Check if slot is occupied
-			const existingActor = echoSlots[slotIndex];
-			if (existingActor && existingActor.id !== actor.id) {
-				// Move existing actor back to reserves
-				const reserveActors = stage().getSave().reserveActors || [];
-				if (!reserveActors.find(a => a.id === existingActor.id)) {
-					stage().getSave().reserveActors = [...reserveActors, existingActor];
-				}
-			}
-			await stage().commitActorToEcho(actor.id, slotIndex);
-			// Remove dragged actor from reserves if they came from there
-			if (data.source === 'reserve') {
-				stage().getSave().reserveActors = (stage().getSave().reserveActors || []).filter(a => a.id !== actor.id);
-				stage().saveGame();
-			}
-			// Use Stage method to manage echo slots
-			setRefreshKey(prev => prev + 1); // Force re-render
-		}
-	};
-
-	const handleDropOnReserve = (e: React.DragEvent) => {
-		e.preventDefault();
-		const data = JSON.parse(e.dataTransfer.getData('application/json'));
-		if (data.source === 'echo') {
-			// Remove from echo slot using Stage method
-			stage().removeActorFromEcho(data.actorId, true);
-			setRefreshKey(prev => prev + 1); // Force re-render
-		}
-	};
-
-	// Tap-to-select handler for mobile
-	const handleReserveActorClick = (actorId: string) => {
-		if (selectedReserveActorId === actorId) {
-			// Deselect if already selected
-			setSelectedReserveActorId(null);
-		} else {
-			// Select the actor
-			setSelectedReserveActorId(actorId);
-		}
-	};
-
-	// Handler for clicking an echo slot with a reserve actor selected
-	const handleEchoSlotClick = async (slotIndex: number) => {
-		if (selectedReserveActorId) {
-			// Place the selected reserve actor in this slot
-			const actor = reserveActors.find(a => a.id === selectedReserveActorId) || echoSlots.find(a => a?.id === selectedReserveActorId);
-			if (actor) {
-				// Check if slot is occupied
-				const existingActor = echoSlots[slotIndex];
-				if (existingActor && existingActor.id !== actor.id) {
-					// Move existing actor back to reserves
-					const reserveActors = stage().getSave().reserveActors || [];
-					if (!reserveActors.find(a => a.id === existingActor.id)) {
-						stage().getSave().reserveActors = [...reserveActors, existingActor];
-					}
-				}
-				await stage().commitActorToEcho(actor.id, slotIndex);
-				// Remove from reserves if they came from there
-				const wasInReserve = reserveActors.find(a => a.id === actor.id);
-				if (wasInReserve) {
-					stage().getSave().reserveActors = (stage().getSave().reserveActors || []).filter(a => a.id !== actor.id);
-					stage().saveGame();
-				}
-				setSelectedReserveActorId(null);
-				setRefreshKey(prev => prev + 1);
-			}
-		} else {
-			// No reserve actor selected, handle normal slot selection
-			const actor = echoSlots[slotIndex];
-			setSelectedSlotIndex(actor ? slotIndex : null);
-		}
-	};
-
-	const module = stage().getSave().layout.getModulesWhere(m => m?.type === 'echo chamber')[0]!;
-	const availableRooms = stage().getSave().layout.getModulesWhere(m => m?.type === 'quarters' && !m?.ownerId) || [];
-	const selectedActor = selectedSlotIndex != null ? echoSlots[selectedSlotIndex] : null;
-	const acceptable = selectedActor && selectedActor.isPrimaryImageReady && availableRooms.length > 0;
-	const background = stage().getSave().actors[module.ownerId || '']?.decorImageUrls[module.type] || module.getAttribute('defaultImageUrl')
+	const portraitUrl = candidate ? candidate.getEmotionImage('neutral', stage()) : '';
+	const imageReady = candidate ? candidate.isPrimaryImageReady : false;
+	const themeColor = candidate?.themeColor || '#b066ff';
 
 	return (
-		<BlurredBackground imageUrl={background}>
-			<div style={{ 
-				display: 'flex', 
-				flexDirection: 'column', 
-				height: '100vh', 
-				width: '100vw'
-			}}>
-			{/* Reserve carousel at top */}
-			<ActorCarousel
-				actors={reserveActors}
-				stage={stage()}
-				isVerticalLayout={isVerticalLayout}
-				expandedActorId={selectedReserveActorId || expandedCandidateId}
-				onExpandActor={setExpandedCandidateId}
-				showRemoveButton={true}
-				onRemoveActor={removeReserveActor}
-				draggable={true}
-				onDragStart={handleDragStart}
-				onDrop={handleDropOnReserve}
-				onDragOver={handleDragOver}
-				selectedActorId={selectedReserveActorId}
-				onActorClick={handleReserveActorClick}
-			/>
-			{/* Echo slots in center with buttons on sides or bottom */}
-			<div style={{ 
-				flex: '1 1 auto', 
-				display: 'flex', 
-				flexDirection: isVerticalLayout ? 'column' : 'row',
-				alignItems: 'center', 
-				justifyContent: 'center', 
-				padding: isVerticalLayout ? '20px' : '40px',
-				gap: isVerticalLayout ? '20px' : '40px'
-			}}>
-				{/* Cancel button on the left (or in button row below if vertical) */}
-				{!isVerticalLayout && (
-					<Button
-						variant="secondary"
-						onClick={cancel}
+		<div style={{ position: 'relative', width: '100vw', height: '100vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+			<BlurredBackground imageUrl={candidate ? candidate.getEmotionImage('neutral', stage()) : ''} />
+
+			{/* Header */}
+			<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', zIndex: 2 }}>
+				<Button onClick={() => setScreenType(ScreenType.STATION)}>Back</Button>
+				<span style={{ opacity: 0.85, fontSize: '0.95rem', letterSpacing: '0.05em' }}>SUMMON</span>
+				<span style={{ width: 64 }} />
+			</div>
+
+			{/* Phone + hand */}
+			<div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', zIndex: 1 }}>
+				{candidate ? (
+					<motion.div
+						key={candidate.id}
+						drag="x"
+						dragConstraints={{ left: 0, right: 0 }}
+						style={{ x, rotate, cursor: 'grab', touchAction: 'none' }}
+						onDragEnd={onDragEnd}
+						initial={{ scale: 0.9, opacity: 0 }}
+						animate={leaving
+							? { x: leaving === 'accept' ? 600 : -600, opacity: 0, rotate: leaving === 'accept' ? 20 : -20 }
+							: { scale: 1, opacity: 1 }}
+						transition={{ type: 'spring', stiffness: 260, damping: 26 }}
 					>
-						Back
-					</Button>
-				)}
-
-				{/* Echo slots container */}
-				<div style={{ display: 'flex', gap: isVerticalLayout ? '20px' : '40px', alignItems: 'flex-end', justifyContent: 'center', flex: 1 }}>
-					{echoSlots.map((actor, slotIndex) => {
-						const isSelected = selectedSlotIndex === slotIndex;
-
-						return (
-							<motion.div
-								key={`echo_slot_${slotIndex}`}
-							onClick={() => handleEchoSlotClick(slotIndex)}
-								onDrop={(e) => handleDropOnEchoSlot(e, slotIndex)}
-								onDragOver={handleDragOver}
-								animate={{
-									scale: (actor && isSelected) ? 1.05 : 1,
-									y: [0, -3, -1, -4, 0],
-									x: [0, 1, -1, 0.5, 0],
-									rotate: [0, 0.5, -0.3, 0.2, 0],
-									transition: {
-										scale: {
-											type: "spring",
-											stiffness: 150,
-											damping: 15
-										},
-										y: {
-											duration: 6,
-											repeat: Infinity,
-											ease: "easeInOut",
-											delay: slotIndex * 0.7
-										},
-										x: {
-											duration: 6,
-											repeat: Infinity,
-											ease: "easeInOut",
-											delay: slotIndex * 0.7
-										},
-										rotate: {
-											duration: 6,
-											repeat: Infinity,
-											ease: "easeInOut",
-											delay: slotIndex * 0.7
-										}
-									}
-								}}
-								whileHover={{ 
-									scale: actor ? (isSelected ? 1.05 : 1.02) : 1,
-									filter: 'brightness(1.1)',
-									transition: {
-										type: "spring",
-										stiffness: 150,
-										damping: 15
-									}
-								}}
-								whileTap={{ scale: actor ? (isSelected ? 1.03 : 1) : 0.98 }}
-								className={actor && !actor.isPrimaryImageReady ? 'loading-echo-slot' : ''}
-								style={{
-									...((actor && !actor.isPrimaryImageReady && actor.themeColor) && {
-										'--shimmer-color': actor.themeColor
-									} as React.CSSProperties),
-									animationDelay: `${slotIndex * 0.7}s`,
-									cursor: actor ? 'pointer' : 'default',
-									height: isVerticalLayout ? '50vh' : '65vh',
-									width: isVerticalLayout ? '28vw' : '18vw',
-									display: 'flex',
-									flexDirection: 'column',
-									justifyContent: actor ? 'flex-end' : 'center',
-									alignItems: actor ? 'stretch' : 'center',
-									borderRadius: 12,
-									overflow: 'hidden',
-									background: actor ? undefined : 'linear-gradient(135deg, rgba(176,102,255,0.15), rgba(0,200,255,0.1))',
-									border: isSelected
-										? `5px solid ${actor?.themeColor || '#ffffff'}` 
-										: selectedReserveActorId
-											? '4px solid rgba(255,215,0,0.8)' // Gold border when ready to place
-											: actor 
-												? `4px solid ${actor.themeColor || '#b066ff'}`
-												: '3px dashed rgba(176,102,255,0.5)',
-									boxShadow: isSelected
-										? `0 12px 40px ${actor?.themeColor ? actor.themeColor + '40' : 'rgba(176,102,255,0.25)'}, inset 0 0 50px ${actor?.themeColor ? actor.themeColor + '20' : 'rgba(176,102,255,0.1)'}` 
-										: actor
-											? `0 8px 25px rgba(0,0,0,0.4), inset 0 0 30px ${actor.themeColor ? actor.themeColor + '15' : 'rgba(176,102,255,0.05)'}, 0 0 20px ${actor.themeColor ? actor.themeColor + '30' : 'rgba(176,102,255,0.1)'}`
-											: '0 8px 25px rgba(0,0,0,0.4), inset 0 0 30px rgba(176,102,255,0.05)',
-									position: 'relative',
-								}}
-							>
-								{/* Background layers for actor slots */}
-								{actor && (
-									<>
-										{/* Actor portrait image layer */}
-										<div 
-											style={{
-												position: 'absolute',
-												top: 0,
-												left: 0,
-												width: '100%',
-												height: '100%',
-												backgroundImage: `url(${actor.getEmotionImage('neutral', stage())})`,
-												backgroundSize: 'cover',
-												backgroundPosition: 'center top',
-												backgroundRepeat: 'no-repeat',
-												zIndex: 0,
-											}}
-										/>
-										{/* Gradient overlay layer */}
-										<div 
-											style={{
-												position: 'absolute',
-												top: 0,
-												left: 0,
-												width: '100%',
-												height: '100%',
-												background: `linear-gradient(
-													135deg, 
-													rgba(176, 102, 255, 0.15) 0%, 
-													rgba(0, 200, 255, 0.1) 50%, 
-													rgba(109, 87, 131, 0.15) 100%
-												)`,
-												mixBlendMode: 'overlay',
-												zIndex: 1,
-											}}
-										/>
-									</>
-								)}
-							{actor ? (
-								<>
-									<RemoveButton
-										onClick={(e: React.MouseEvent) => removeEchoActor(actor.id, e)}
-										title="Move to reserves"
-										variant="topRightInset"
-										size="medium"
-									/>
-									{/* Spacer to push the nameplate and stats down about 30vh */}
-									<div style={{ flex: '0 0 30vh', position: 'relative', zIndex: 2 }}></div>
-									{/* Actor nameplate */}
-									<Nameplate 
-										actor={actor} 
-										size="medium"
-										role={(() => {
-											const roleModules = stage().getSave().layout.getModulesWhere((m: any) => 
-												m && m.type !== 'quarters' && m.ownerId === actor.id
-											);
-											return roleModules.length > 0 ? roleModules[0].getAttribute('role') : undefined;
-										})()}
-										layout="stacked"
-										style={{
-											padding: 'clamp(8px, 1.5vmin, 16px) clamp(10px, 2vmin, 20px)',
-											fontSize: 'clamp(14px, 2.2vmin, 20px)',
-											position: 'relative',
-											zIndex: 2
-										}}
-									/>
-								{/* Stats */}
-								<div className="stat-list" style={{ padding: 'clamp(6px, 1vmin, 10px) clamp(8px, 1.5vmin, 14px)', background: 'rgba(0,0,0,0.8)', flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-evenly', position: 'relative', zIndex: 2 }}>
-										{Object.values(Stat).map((stat) => {
-											const grade = scoreToGrade(actor.stats[stat]);
-											const StatIcon = ACTOR_STAT_ICONS[stat];
-											return (
-												<div className="stat-row" key={`${actor.id}_${stat}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-													<div style={{ display: 'flex', alignItems: 'center', gap: 'clamp(4px, 0.8vmin, 8px)' }}>
-														{StatIcon && <StatIcon style={{ fontSize: 'clamp(0.8rem, 2vmin, 1.2rem)', opacity: 0.8, flexShrink: 0 }} />}
-														<span className="stat-label">{stat}</span>
-													</div>
-													<span className="stat-grade" data-grade={grade}>{grade}</span>
-												</div>
-												);
-										})}
-										{/* Author link */}
-										<AuthorLink actor={actor} />
-									</div>
-								</>
-							) : (
-								<div style={{ 
-									color: selectedReserveActorId ? 'rgba(255,215,0,0.9)' : 'rgba(176,102,255,0.7)', 
-									fontSize: 'clamp(14px, 2.2vmin, 20px)', 
-									textAlign: 'center',
-									padding: 'clamp(12px, 2.5vmin, 24px)',
-									transition: 'color 0.3s ease'
-								}}>
-									{selectedReserveActorId ? 'Tap here to place the selected soul' : 'Drag or tap a soul above, then tap here to place'}
-								</div>
-							)}
-								</motion.div>
-						);
-					})}
-				</div>
-
-				{/* Wake button on the right (or in button row below if vertical) */}
-				{!isVerticalLayout && (
-					<Button
-						variant="primary"
-						onClick={accept}
-						disabled={!acceptable}
-						style={{
-							background: acceptable ? 'var(--color-primary)' : 'rgba(255,255,255,0.06)',
-							color: acceptable ? '#1a0533' : '#9aa0a6'
-						}}
-					>
-						{availableRooms.length === 0 
-							? 'No Available Quarters' 
-							: selectedActor 
-								? (selectedActor.isPrimaryImageReady ? 'Complete Summoning' : 'Still Taking Form')
-								: 'Select a Candidate'
-						}
-					</Button>
-				)}
-
-				{/* Button row for vertical layout */}
-				{isVerticalLayout && (
-					<div style={{ display: 'flex', gap: '20px', justifyContent: 'center', width: '100%' }}>
-						<Button
-							variant="secondary"
-							onClick={cancel}
-						>
-							Cancel
-						</Button>
-						<Button
-							variant="primary"
-							onClick={accept}
-							disabled={!acceptable}
+						{/* The phone */}
+						<div
+							onClick={() => setShowDetail(true)}
 							style={{
-								background: acceptable ? 'var(--color-primary)' : 'rgba(255,255,255,0.06)',
-								color: acceptable ? '#1a0533' : '#9aa0a6'
+								position: 'relative',
+								width: 'min(340px, 82vw)',
+								height: 'min(620px, 74vh)',
+								borderRadius: 34,
+								background: '#0b0712',
+								border: '3px solid #1c1430',
+								boxShadow: `0 24px 60px rgba(0,0,0,0.55), 0 0 0 2px rgba(255,255,255,0.03) inset`,
+								overflow: 'hidden',
+								display: 'flex',
+								flexDirection: 'column',
 							}}
 						>
-							{availableRooms.length === 0 
-								? 'No Available Quarters' 
-								: selectedActor 
-									? (selectedActor.isPrimaryImageReady ? 'Complete Summoning' : 'Still Taking Form')
-									: 'Select a Candidate'
-							}
-						</Button>
+							{/* notch */}
+							<div style={{ position: 'absolute', top: 8, left: '50%', transform: 'translateX(-50%)', width: 90, height: 18, borderRadius: 12, background: '#000', zIndex: 3 }} />
+
+							{/* portrait */}
+							<div style={{
+								position: 'relative',
+								height: '58%',
+								backgroundImage: portraitUrl ? `url(${portraitUrl})` : undefined,
+								background: portraitUrl ? undefined : `linear-gradient(160deg, ${themeColor}44, #0b0712)`,
+								backgroundSize: 'cover',
+								backgroundPosition: 'center top',
+							}}>
+								{!imageReady && (
+									<div style={{
+										position: 'absolute', inset: 0, display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+										paddingBottom: 12, background: 'linear-gradient(to top, rgba(11,7,18,0.85), transparent 45%)',
+									}}>
+										<motion.span
+											style={{ fontSize: '0.8rem', opacity: 0.85 }}
+											animate={{ opacity: [0.4, 1, 0.4] }}
+											transition={{ duration: 1.4, repeat: Infinity }}
+										>
+											materializing&hellip;
+										</motion.span>
+									</div>
+								)}
+								{/* swipe intent glows */}
+								<motion.div style={{ position: 'absolute', top: 14, left: 14, padding: '4px 10px', borderRadius: 8, border: '2px solid #ff5a7a', color: '#ff5a7a', fontWeight: 700, transform: 'rotate(-12deg)', opacity: rejectGlow }}>PASS</motion.div>
+								<motion.div style={{ position: 'absolute', top: 14, right: 14, padding: '4px 10px', borderRadius: 8, border: '2px solid #57e08a', color: '#57e08a', fontWeight: 700, transform: 'rotate(12deg)', opacity: acceptGlow }}>SUMMON</motion.div>
+							</div>
+
+							{/* info */}
+							<div style={{ flex: 1, padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 8, background: 'linear-gradient(to bottom, #120a20, #0b0712)' }}>
+								<div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 }}>
+									<span style={{ fontSize: '1.15rem', fontWeight: 700, color: themeColor, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{candidate.name}</span>
+									<span style={{ color: '#ffd453', letterSpacing: 1, flexShrink: 0 }} title={`${candidate.getStarRating()} stars`}>
+										{'\u2605'.repeat(candidate.getStarRating())}{'\u2606'.repeat(5 - candidate.getStarRating())}
+									</span>
+								</div>
+
+								{/* capability grades */}
+								<div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '6px 10px' }}>
+									{CAPABILITY_STATS.map(stat => {
+										const Icon = ACTOR_STAT_ICONS[stat];
+										return (
+											<div key={stat} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.8rem' }}>
+												{Icon && <Icon style={{ fontSize: '0.95rem', opacity: 0.75 }} />}
+												<span style={{ fontWeight: 700 }}>{scoreToGrade(candidate.stats[stat])}</span>
+											</div>
+										);
+									})}
+								</div>
+
+								<div style={{ marginTop: 'auto', textAlign: 'center', fontSize: '0.7rem', opacity: 0.5 }}>tap for details</div>
+							</div>
+						</div>
+
+						{/* simple hand cradling the phone */}
+						<div style={{ position: 'relative', height: 26, marginTop: -14 }}>
+							<div style={{ position: 'absolute', left: '50%', transform: 'translateX(-50%)', width: '70%', height: 40, background: 'linear-gradient(to top, #d9a97e, #c99167)', borderRadius: '40% 40% 20% 20%', filter: 'blur(0.3px)', opacity: 0.9 }} />
+						</div>
+					</motion.div>
+				) : (
+					<div style={{ textAlign: 'center', opacity: 0.7 }}>
+						<motion.div animate={{ opacity: [0.4, 1, 0.4] }} transition={{ duration: 1.5, repeat: Infinity }}>
+							The app is searching for a signal&hellip;
+						</motion.div>
 					</div>
 				)}
 			</div>
+
+			{/* action buttons */}
+			<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 28, padding: '14px 0 26px', zIndex: 2 }}>
+				<button
+					onClick={doReject}
+					disabled={!candidate || !!leaving}
+					aria-label="Pass"
+					style={{ width: 60, height: 60, borderRadius: '50%', border: '2px solid #ff5a7a', background: 'rgba(255,90,122,0.12)', color: '#ff5a7a', fontSize: '1.5rem', cursor: candidate ? 'pointer' : 'default' }}
+				>&#10005;</button>
+				<button
+					onClick={doAccept}
+					disabled={!candidate || !!leaving}
+					aria-label="Summon"
+					style={{ width: 72, height: 72, borderRadius: '50%', border: '2px solid #57e08a', background: 'rgba(87,224,138,0.14)', color: '#57e08a', fontSize: '1.7rem', cursor: candidate ? 'pointer' : 'default' }}
+				>&#10003;</button>
 			</div>
-		</BlurredBackground>
+
+			{/* detail overlay - the "look before you decide" view */}
+			{showDetail && candidate && (
+				<ActorDetailScreen actor={candidate} stage={stage} onClose={() => setShowDetail(false)} />
+			)}
+		</div>
 	);
-}
+};

@@ -53,6 +53,7 @@ export type SaveType = {
     attenuation?: string;
     typeOutSpeed?: number;
     reserveActors?: Actor[];
+    activeActorId?: string; // The one summon currently active in the world (Summoner Game: one at a time). Others sit in the void.
     language?: string;
     tone?: string;
     disableImpersonation?: boolean;
@@ -1077,6 +1078,44 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
         });
 
         return this.reserveActorsLoadPromise;
+    }
+
+    /**
+     * Bind a candidate summon into the roster. Tower-independent (no rooms/quarters): the summon is
+     * added to save.actors, removed from the reserve pool, made the active summon if none is active,
+     * and greeted with an intro skit. Works WITHOUT a ready portrait - the image backfills after.
+     * Returns the actorId so the caller can route into the intro skit.
+     */
+    acceptSummon(actor: Actor): string {
+        const save = this.getSave();
+        save.actors[actor.id] = actor;
+        save.reserveActors = (save.reserveActors || []).filter(a => a.id !== actor.id);
+        // First summon (or whenever nothing is active) becomes the active summon.
+        if (!save.activeActorId || !save.actors[save.activeActorId]) {
+            save.activeActorId = actor.id;
+        }
+        // Placeholder location until the Location graph lands (Pass 4); 'home' is the root-to-be.
+        actor.locationId = actor.locationId || 'home';
+        this.setSkit({
+            type: SkitType.INTRO_CHARACTER,
+            actorId: actor.id,
+            moduleId: actor.locationId,
+            script: [],
+            generating: true,
+            context: {}
+        });
+        this.saveGame();
+        // Keep a candidate ready for the next pull.
+        this.loadReserveActors();
+        return actor.id;
+    }
+
+    /** Discard a candidate the player swiped away and top the pool back up so a next card is ready. */
+    rejectSummon(actor: Actor): void {
+        const save = this.getSave();
+        save.reserveActors = (save.reserveActors || []).filter(a => a.id !== actor.id);
+        this.saveGame();
+        this.loadReserveActors();
     }
 
     async loadReserveFactions() {

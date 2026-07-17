@@ -231,6 +231,30 @@ class Actor {
         return 20 + brawn * 5 + nerve * 3;
     }
 
+    /**
+     * Star rating (1-5) shown on the summon card - DERIVED from the effective capability block,
+     * never judged separately by the LLM, so it can't contradict the stats it sits beside. It reads
+     * this.stats, so once traits (Pass 6) push effective capability into the superhuman/divine range
+     * a summon's stars rise automatically. Frozen at summon time by the caller; this getter is the
+     * formula behind that snapshot.
+     *
+     * During the current alpha, base distillation caps at Rank 7, so summons naturally top out around
+     * 3 stars until traits exist - that's expected, not a bug.
+     */
+    getStarRating(): number {
+        const vals = CAPABILITY_STATS.map(s => this.stats[s] ?? HUMAN_AVERAGE);
+        const peak = Math.max(...vals);
+        const avg = vals.reduce((a, b) => a + b, 0) / vals.length;
+        let stars: number;
+        if (peak <= 4) stars = 1;          // ordinary human
+        else if (peak <= 6) stars = 2;     // gifted / specialist
+        else if (peak <= 8) stars = 3;     // peak human into low superhuman
+        else if (peak <= 10) stars = 4;    // solid superhuman
+        else stars = 5;                    // divine (S+)
+        if (avg >= 6 && stars < 5) stars += 1; // well-rounded across the board
+        return Math.max(1, Math.min(5, stars));
+    }
+
     setDescription(description: string, outfitId: string = '') {
         this.getOutfitById(outfitId).description = description || '';
     }
