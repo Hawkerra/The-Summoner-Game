@@ -8,7 +8,7 @@ import { Stage } from '../Stage';
 import { loadReserveActorFromFullPath } from '../actors/Actor';
 import { BlurredBackground } from '../components/BlurredBackground';
 import { Button, GlassPanel } from '../components/UIComponents';
-import { ActorCarousel } from '../components/ActorCarousel';
+import { ActorCarousel } from '../components/CarouselStub';
 import { Box, setRef, TextField, Typography } from '@mui/material';
 
 interface AttenuationScreenProps {

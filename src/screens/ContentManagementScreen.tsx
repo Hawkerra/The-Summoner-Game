@@ -7,8 +7,7 @@ import { ModuleIntrinsic } from '../Module';
 import { GlassPanel, Title, Button } from '../components/UIComponents';
 import { Close, Person, Groups, Domain } from '@mui/icons-material';
 import { ActorDetailScreen } from './ActorDetailScreen';
-import { FactionDetailScreen } from './FactionDetailScreen';
-import { ModuleDetailScreen } from './ModuleDetailScreen';
+
 
 interface ContentManagementScreenProps {
     stage: () => Stage;
@@ -510,24 +509,9 @@ export const ContentManagementScreen: FC<ContentManagementScreenProps> = ({ stag
                 />
             )}
 
-            {/* Faction Detail Modal */}
-            {selectedFaction && (
-                <FactionDetailScreen
-                    faction={selectedFaction}
-                    stage={stage}
-                    onClose={handleCloseDetail}
-                />
-            )}
-
-            {/* Module Detail Modal */}
-            {selectedModuleId && stage().getSave().customModules?.[selectedModuleId] && (
-                <ModuleDetailScreen
-                    moduleId={selectedModuleId}
-                    module={stage().getSave().customModules![selectedModuleId]}
-                    stage={stage}
-                    onClose={handleCloseDetail}
-                />
-            )}
+            {/* Faction/Module detail modals removed in the strip; these systems are
+                discarded for The Summoner Game. Any remaining faction/module state here is
+                condemned scaffolding to be cleaned up alongside the Stage.tsx conversion. */}
         </>
     );
 };

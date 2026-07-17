@@ -1,6 +1,6 @@
 import React, { FC } from 'react';
 import { Stage } from '../Stage';
-import { StationScreen } from './StationScreen';
+import { HomeScreen } from './HomeScreen';
 import { EchoScreen } from './EchoScreen';
 import { CryoScreen } from './CryoScreen';
 import { MenuScreen } from './MenuScreen';
@@ -65,8 +65,8 @@ const BaseScreenContent: FC<{ stage: () => Stage }> = ({ stage }) => {
                 <LoadingScreen stage={stage} setScreenType={setScreenType} />
             )}
             {screenType === ScreenType.STATION && (
-                // Render station screen
-                <StationScreen stage={stage} setScreenType={setScreenType} isVerticalLayout={isVerticalLayout} />
+                // Render home screen (Pass 1 stub; becomes the Location view in Pass 4)
+                <HomeScreen stage={stage} setScreenType={setScreenType} isVerticalLayout={isVerticalLayout} />
             )}
             {screenType === ScreenType.ECHO && (
                 // Render echo screen

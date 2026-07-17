@@ -10,7 +10,7 @@ import Nameplate from '../components/Nameplate';
 import Actor, { Stat, ACTOR_STAT_ICONS } from '../actors/Actor';
 import { scoreToGrade } from '../utils';
 import { BlurredBackground } from '../components/BlurredBackground';
-import { ActorCarousel } from '../components/ActorCarousel';
+import { ActorCarousel } from '../components/CarouselStub';
 import AuthorLink from '../components/AuthorLink';
 import { Button } from '../components/UIComponents';
 import { SkitType } from '../Skit';
