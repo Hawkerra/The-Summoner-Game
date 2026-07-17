@@ -329,7 +329,7 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
                 `Fair warning: two centuries of empty halls have left them a touch capricious - expect teasing, dramatics, and open delight in your confusion, as your suffering is (by their own cheerful admission) the finest entertainment they've had in two hundred years. ` +
                 `Rest assured the binding compels honest service no matter how they grumble, and those who earn their trust report the needling softens into something almost like fondness. They are especially fond of introducing you as the late Magus's magic-order bride or groom.`}, 
             echoes: [], actors: {}, factions: {}, layout: layout, day: 1, turn: 0, currentSkit: undefined, typeOutSpeed: this.DEFAULT_TYPE_OUT_SPEED, reserveActors: [],
-            locations: { [HOME_LOCATION_ID]: createHomeLocation(0) }, currentLocationId: HOME_LOCATION_ID };
+            locations: { [HOME_LOCATION_ID]: createHomeLocation(0) }, currentLocationId: HOME_LOCATION_ID, disableTextToSpeech: true };
 
         // ensure at least one save exists and has a layout
         if (!this.saves.length) {
@@ -932,33 +932,14 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
             }
         });
 
-        // If any echo actors are missing primary images, kick those off now.
-        for (const echoActor of save.echoes) {
-            if (echoActor && (!echoActor.getEmotionImageUrl(Emotion.neutral) || echoActor.getEmotionImageUrl(Emotion.neutral) == echoActor.avatarImageUrl)) {
-                generateBaseActorImage(echoActor, this).then(() => {
-                    this.saveGame();
-                });
-            }
-        }
-
-        // If there are any actors in the save with missing emotion images, kick one of them off now.
-        for (const actorId in save.actors) {
-            const actor = save.actors[actorId];
-            if (!actor.getEmotionImageUrl(Emotion.neutral) || actor.getEmotionImageUrl(Emotion.neutral) == actor.avatarImageUrl) {
-                generateBaseActorImage(actor, this).then(() => {
-                    this.saveGame();
-                });
-                break; // only do one at a time
-            } else if (!actor.factionId && Object.values(Emotion).some(emotion => emotion !== Emotion.neutral && (
-                    !actor.getEmotionImageUrl(emotion) || 
-                    actor.getEmotionImageUrl(emotion) == actor.avatarImageUrl || 
-                    actor.getEmotionImageUrl(emotion) == actor.getEmotionImageUrl(Emotion.neutral)))) {
-                generateAdditionalActorImages(actor, this).then(() => {
-                    this.saveGame();
-                });
-                break; // only do one at a time
-            }
-        }
+        // Summoner Game: sprites are NOT generated automatically. Summons show the bot's own base
+        // image (avatarImageUrl) until the player deliberately generates a game sprite from the
+        // character detail view. This keeps the image service from grinding through portraits for
+        // candidates and summons the player may never care about. (The manual "regenerate base
+        // image" control lives in ActorDetailScreen.)
+        //
+        // Previously this block auto-generated a base/emotion image for every echo actor and every
+        // saved actor with a missing image, one at a time - re-enable per-actor via the detail view.
 
         // Now that the game is fully initialized and running, kick off starting-room art in the
         // background (only for a brand-new game). Fire-and-forget so it never blocks startup.

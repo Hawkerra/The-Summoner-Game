@@ -149,7 +149,7 @@ export const SettingsScreen: FC<SettingsScreenProps> = ({ stage, onCancel, onCon
             `The Tower Spirit. "Your suffering entertains me, mortal."`),
         directorModuleName: saveFromStage.directorModule?.name || 'Magus\'s Study',
         directorModuleRoleName: saveFromStage.directorModule?.roleName || 'Maid',
-        disableTextToSpeech: saveFromStage.disableTextToSpeech ?? false,
+        disableTextToSpeech: saveFromStage.disableTextToSpeech ?? true,
         disableEmotionImages: saveFromStage.disableEmotionImages ?? false,
         disableDecorImages: saveFromStage.disableDecorImages ?? saveFromStage.disableEmotionImages ?? false,
         disableImpersonation: saveFromStage.disableImpersonation ?? false,

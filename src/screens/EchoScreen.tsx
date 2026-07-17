@@ -60,30 +60,33 @@ export const EchoScreen: FC<EchoScreenProps> = ({ stage, setScreenType }) => {
 	}, []);
 
 	const doAccept = () => {
-		if (!candidate) return;
+		if (!candidate || leaving) return;
 		setLeaving('accept');
+		animate(x, 700, { duration: 0.28, ease: 'easeIn' });
 		const id = stage().acceptSummon(candidate);
 		// Route into the intro skit for the freshly bound summon.
-		setTimeout(() => { if (id) setScreenType(ScreenType.SKIT); }, 220);
+		setTimeout(() => { if (id) setScreenType(ScreenType.SKIT); }, 260);
 	};
 
 	const doReject = () => {
-		if (!candidate) return;
+		if (!candidate || leaving) return;
 		setLeaving('reject');
 		const rejected = candidate;
+		animate(x, -700, { duration: 0.28, ease: 'easeIn' });
 		setTimeout(() => {
 			stage().rejectSummon(rejected);
 			x.set(0);
 			setLeaving(null);
 			refresh();
-		}, 220);
+		}, 260);
 	};
 
-	const onDragEnd = () => {
-		const dx = x.get();
+	const onDragEnd = (_e: any, info: { offset: { x: number } }) => {
+		const dx = info.offset.x;
 		if (dx > SWIPE_THRESHOLD) { doAccept(); return; }
 		if (dx < -SWIPE_THRESHOLD) { doReject(); return; }
-		animate(x, 0, { type: 'spring', stiffness: 300, damping: 30 });
+		// Not far enough - spring the card back to center.
+		animate(x, 0, { type: 'spring', stiffness: 500, damping: 34 });
 	};
 
 	const portraitUrl = candidate ? candidate.getEmotionImage('neutral', stage()) : '';
@@ -107,13 +110,11 @@ export const EchoScreen: FC<EchoScreenProps> = ({ stage, setScreenType }) => {
 					<motion.div
 						key={candidate.id}
 						drag="x"
-						dragConstraints={{ left: 0, right: 0 }}
+						dragElastic={0.6}
 						style={{ x, rotate, cursor: 'grab', touchAction: 'none' }}
 						onDragEnd={onDragEnd}
 						initial={{ scale: 0.9, opacity: 0 }}
-						animate={leaving
-							? { x: leaving === 'accept' ? 600 : -600, opacity: 0, rotate: leaving === 'accept' ? 20 : -20 }
-							: { scale: 1, opacity: 1 }}
+						animate={{ scale: 1, opacity: 1 }}
 						transition={{ type: 'spring', stiffness: 260, damping: 26 }}
 					>
 						{/* The phone */}
