@@ -62,23 +62,29 @@ export const EchoScreen: FC<EchoScreenProps> = ({ stage, setScreenType }) => {
 	const doAccept = () => {
 		if (!candidate || leaving) return;
 		setLeaving('accept');
-		animate(x, 700, { duration: 0.28, ease: 'easeIn' });
 		const id = stage().acceptSummon(candidate);
-		// Route into the intro skit for the freshly bound summon.
-		setTimeout(() => { if (id) setScreenType(ScreenType.SKIT); }, 260);
+		animate(x, 700, {
+			duration: 0.25, ease: 'easeIn',
+			onComplete: () => { if (id) setScreenType(ScreenType.SKIT); }
+		});
 	};
 
 	const doReject = () => {
 		if (!candidate || leaving) return;
 		setLeaving('reject');
 		const rejected = candidate;
-		animate(x, -700, { duration: 0.28, ease: 'easeIn' });
-		setTimeout(() => {
-			stage().rejectSummon(rejected);
-			x.set(0);
-			setLeaving(null);
-			refresh();
-		}, 260);
+		animate(x, -700, {
+			duration: 0.25, ease: 'easeIn',
+			onComplete: () => {
+				stage().rejectSummon(rejected);
+				// Reset AFTER the fling has fully finished - resetting mid-animation left the card
+				// parked off-screen (the animation's final frames overwrote the reset).
+				x.stop();
+				x.set(0);
+				setLeaving(null);
+				refresh();
+			}
+		});
 	};
 
 	const onDragEnd = (_e: any, info: { offset?: { x: number }; velocity?: { x: number } }) => {
@@ -138,15 +144,17 @@ export const EchoScreen: FC<EchoScreenProps> = ({ stage, setScreenType }) => {
 							{/* notch */}
 							<div style={{ position: 'absolute', top: 8, left: '50%', transform: 'translateX(-50%)', width: 90, height: 18, borderRadius: 12, background: '#000', zIndex: 3 }} />
 
-							{/* portrait */}
-							<div style={{
-								position: 'relative',
-								height: '58%',
-								backgroundImage: portraitUrl ? `url(${portraitUrl})` : undefined,
-								background: portraitUrl ? undefined : `linear-gradient(160deg, ${themeColor}44, #0b0712)`,
-								backgroundSize: 'cover',
-								backgroundPosition: 'center top',
-							}}>
+							{/* portrait - the bot card's own image, rendered as a real <img> (CSS
+							    background url() breaks silently on URLs with spaces/special chars) */}
+							<div style={{ position: 'relative', height: '58%', overflow: 'hidden', background: `linear-gradient(160deg, ${themeColor}44, #0b0712)` }}>
+								{portraitUrl && (
+									<img
+										src={portraitUrl}
+										alt={candidate.name}
+										draggable={false}
+										style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center top', display: 'block', pointerEvents: 'none', userSelect: 'none' }}
+									/>
+								)}
 								{/* swipe intent glows */}
 								<motion.div style={{ position: 'absolute', top: 14, left: 14, padding: '4px 10px', borderRadius: 8, border: '2px solid #ff5a7a', color: '#ff5a7a', fontWeight: 700, transform: 'rotate(-12deg)', opacity: rejectGlow }}>PASS</motion.div>
 								<motion.div style={{ position: 'absolute', top: 14, right: 14, padding: '4px 10px', borderRadius: 8, border: '2px solid #57e08a', color: '#57e08a', fontWeight: 700, transform: 'rotate(12deg)', opacity: acceptGlow }}>SUMMON</motion.div>
