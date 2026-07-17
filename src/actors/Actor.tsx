@@ -503,23 +503,20 @@ export async function loadReserveActor(data: any, stage: Stage, includeHistory: 
     // Take this data and use text generation to get an updated distillation of this character, including a physical description.
     const generatedResponse = await stage.makeText({
         prompt: `{{messages}}This is preparatory request for structured and formatted game content.` +
-            buildPromptSegment(`Background`, `This game is a fantasy multiverse setting that pulls characters from across eras, worlds, and settings. ` +
-                `The player of this game, ${stage.getSave().player.name}, presides as Magus over an isolated wizard's tower called the Sanctum for Planar Intake, Restoration, and Enrichment, or the Spire, which summons people from other realities and helps them adapt to a new life, ` +
-                `with the goal of placing these characters into a new role in this world. These new roles are offered by external factions, generally in exchange for a finder's fee or reputation boost. ` +
-                `Some roles are above board, while others may involve morally ambiguous or covert activities; some may even be illicit or compulsary. ` +
-                `The player's motives and ethics are open-ended; they may be benevolent or self-serving, and the characters they interact with may respond accordingly. `) +
+            buildPromptSegment(`Background`, `This game is set in the ordinary modern world. A strange smartphone app summons real people out of their own lives and worlds and binds them to the player. ` +
+                `The player, ${stage.getSave().player.name}, is the Summoner: an otherwise-ordinary modern person caught up in a hidden game run by an unseen Game Master, who now has these summoned people bound to them. ` +
+                `The Summoner's motives and ethics are open-ended; they may be benevolent or self-serving, and the people they summon may respond accordingly. `) +
             buildPromptSegment(`Narrative Tone`, `${stage.getSave().tone || stage.TONE_MAP['Original']}`) +
             (includeHistory && historyPrompt ? buildPromptSegment(`Recent Events`, historyPrompt) : '') +
             buildPromptSegment(`Original Details`, `The Original Details below describe a character or scenario (${data.name}) from another universe. This request and response must digest and distill these details to suit the game's narrative scenario, ` +
-                `crafting a character who has been drawn bodily into this world through the Spire's summoning sanctum, plucked alive - and without their consent - from their home reality by the leyline's one-way current. ` +
-                `This character's supernatural or arcane abilities survive the crossing largely intact; only powers of truly cosmic scale - godhood, omniscience, reality-shaping, and the like - are dampened by the crossing to roughly the tier of a formidable archmage. ` +
-                `Additionally, the Spire's standing wards prevent any ability from being used aggressively against the Magus or the tower's residents while within its walls. ` +
-                `Their new description and profile should reflect their arrival in this world and any such changes.\n\n` +
+                `crafting a person who has just been summoned - pulled bodily out of their own life, without their consent, into the player's ordinary modern world - and bound to the Summoner through the app. ` +
+                `Represent them as the real person they are, with their own history, identity, and abilities. Their new description and profile should reflect this abrupt arrival and how they take it. ` +
+                `Any extraordinary, supernatural, or superhuman abilities they possess are represented SEPARATELY by the game (as traits) and must NOT inflate the human-scale capability scores below - score only ordinary human aptitude here.\n\n` +
                 `The provided Original Details reference 'Individual X' who no longer exists in this timeline; ` +
                 `if Individual X remains relevant to this character, Individual X should be replaced with an appropriate name in the distillation.\n\n` +
                 `In addition to the simple display name, physical description, and personality profile, ` +
-                `score the character on a scale of 1-10 for the following traits: BRAWN, SKILL, NERVE, WITS, CHARM, LUST, JOY, and TRUST.\n` +
-                `Score these traits according to the character as they now stand - abilities intact save for any cosmic-tier dampening - reflecting their genuine capabilities in this world (but omit your reasons from the response structure); ` +
+                `score the character on the capability stats BRAWN, SKILL, NERVE, WITS, CHARM, and REFLEX, plus the bond/state meters LUST, JOY, and TRUST, using the detailed scale and rules given further below.\n` +
+                `Score these according to the person as they now stand, reflecting ordinary human aptitude only (superhuman power is represented separately, not in these base scores; omit your reasons from the response structure); ` +
                 `some characters may not respond well to being torn from their lives and homes without consent. Others may see an adventure, or a fresh start.\n\n` +
             buildPromptSegment(`Original Details about ${data.name}`, `${data.personality}`) +
             buildPromptSegment(`Available Voices`, `${Object.entries(VOICE_MAP).map(([voiceId, voiceDesc]) => '  - ' + voiceId + ': ' + voiceDesc).join('\n')}`) +
@@ -559,7 +556,7 @@ export async function loadReserveActor(data: any, stage: Stage, includeHistory: 
                 `#END#`) +
             (stage.getSave().attenuation ? 
                 buildPromptSegment(`Attenuation`, 
-                    `The tower's arcane focus is currently attuned to modify the resulting summoning; take the following additional context into account while forming this distillation:\n${stage.getSave().attenuation}`) : 
+                    `The app's summoning parameters are currently attuned to shape the resulting summon; take the following additional context into account while forming this distillation:\n${stage.getSave().attenuation}`) : 
                 '')),
         stop: ['#END'],
         include_history: true, // There won't be any history, but if this is true, the front-end doesn't automatically apply pre-/post-history prompts.

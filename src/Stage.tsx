@@ -133,8 +133,8 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
     readonly characterDetailQuery = 'https://inference.chub.ai/api/characters/{fullPath}?full=true';
 
     readonly TONE_MAP: {[key: string]: string} = {
-        'Original': 'The universe is a wild and evocative kaleidoscope, rich in diverse characters and organizations. ' +
-            'Stories set in this universe can vary widely in tone—from lighthearted and humorous to dark and introspective—, but generally emphasize slice-of-life dramedy as residents navigate unlikely relationships and personal journeys.',
+        'Original': 'The modern world looks ordinary, but a hidden game runs beneath it, and the people the app summons are real. ' +
+            'Stories here can vary widely in tone - from warm, low-stakes slice-of-life between the summoner and their summons to tense, dangerous events - but generally emphasize grounded, character-driven drama: unlikely bonds forming between a summoner and the people bound to them against their will, against a backdrop of quiet modern life and creeping unease.',
         'Gritty': 'The universe is a harsh and unforgiving landscape where survival is a constant struggle. ' +
             'Stories set in this universe tend to be dark and intense, with high stakes and morally complex characters. Themes of sacrifice, resilience, and the human spirit prevailing against all odds are common.',
         'Humorous': 'The universe is a whimsical and absurd place, where the bizarre and unexpected are commonplace. ' +
