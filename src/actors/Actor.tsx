@@ -5,22 +5,41 @@ import { v4 as generateUuid } from 'uuid';
 import { AspectRatio } from "@chub-ai/stages-ts";
 import { FlashOn, Forum, 
     FitnessCenter, Construction, Lightbulb, 
-    Whatshot, SentimentVerySatisfied, Handshake 
+    Whatshot, SentimentVerySatisfied, Handshake, Speed 
 } from '@mui/icons-material';
 import { buildEventHistory, buildPromptSegment } from "../Skit";
 
 // Core character stats as an enum so other parts of the app can reference them safely
-// Using single-syllable words, each starting with a different letter
 export enum Stat {
-    Brawn = 'brawn', // Physical condition and strength
-    Skill = 'skill', // Capability and finesse
-    Nerve = 'nerve', // Courage and confidence
+    // --- Capability stats: the 13-rank scale; distilled (base capped at 7), upgraded by SP, tested by events ---
+    Brawn = 'brawn', // Physical power and conditioning
+    Skill = 'skill', // Technical competence and finesse
+    Nerve = 'nerve', // Courage and mental resilience
     Wits = 'wits', // Intelligence and awareness
-    Charm = 'charm', // Charisma and tact
+    Charm = 'charm', // Personality appeal and tact
+    Reflex = 'reflex', // Speed, reaction time, and agility (combat initiative and evasion)
+    // --- Bond / state meters: a separate human-range scale; move through play, never purchased ---
     Lust = 'lust', // Sexuality and physical desire
     Joy = 'joy', // Happiness and positivity
-    Trust = 'trust' // Compliance and faith in the player
+    Trust = 'trust' // Compliance and faith in the Summoner
 }
+
+// The six capability stats use the full 13-rank scale (F..SSS). Base distillation caps them at 7;
+// anything above that comes from traits (Pass 6) or SP investment. These are what events test.
+export const CAPABILITY_STATS: Stat[] = [Stat.Brawn, Stat.Skill, Stat.Nerve, Stat.Wits, Stat.Charm, Stat.Reflex];
+
+// The three bond/state meters represent relationship and emotional state, not power. They live on a
+// small human-range scale, move through play (never purchased), and are not boosted by traits/SP.
+export const BOND_STATS: Stat[] = [Stat.Lust, Stat.Joy, Stat.Trust];
+
+export function isCapabilityStat(stat: Stat | string): boolean {
+    return (CAPABILITY_STATS as string[]).includes(stat as string);
+}
+
+// Rank scale constants.
+export const RANK_MAX = 13;            // absolute ceiling (SSS); effective stats clamp here
+export const BASE_DISTILL_MAX = 7;     // peak human; the distiller never assigns a base capability above this
+export const HUMAN_AVERAGE = 3;        // rank C - the default a capability defaults to when unstated
 
 // Icon mapping for actor stats
 export const ACTOR_STAT_ICONS: Record<Stat, any> = {
@@ -29,6 +48,7 @@ export const ACTOR_STAT_ICONS: Record<Stat, any> = {
     [Stat.Nerve]: FlashOn,
     [Stat.Wits]: Lightbulb,
     [Stat.Charm]: Forum,
+    [Stat.Reflex]: Speed,
     [Stat.Lust]: Whatshot,
     [Stat.Joy]: SentimentVerySatisfied,
     [Stat.Trust]: Handshake,
@@ -123,6 +143,15 @@ class Actor {
         if (actor.roleProficiency === undefined) {
             actor.roleProficiency = {};
         }
+        // Backfill any capability stat missing from an older save (e.g. Reflex, added in the
+        // rank-spine pass) so stat rows and derived Health never read undefined.
+        if (actor.stats) {
+            for (const stat of CAPABILITY_STATS) {
+                if (typeof actor.stats[stat] !== 'number' || isNaN(actor.stats[stat])) {
+                    actor.stats[stat] = HUMAN_AVERAGE;
+                }
+            }
+        }
         return actor;
     }
 
@@ -188,6 +217,18 @@ class Actor {
         if (!this.roleProficiency) this.roleProficiency = {};
         const current = this.roleProficiency[role] ?? 5;
         this.roleProficiency[role] = Math.max(1, Math.min(10, current + delta));
+    }
+
+    /**
+     * Health is a DERIVED pool, not a distilled stat - it scales off Brawn (bulk) and Nerve
+     * (will to keep going) so investing in those raises survivability naturally. Traits and
+     * equipment will feed into this later (Pass 6); combat consumes it (Pass 7). For now it's a
+     * clean baseline read-out so the rest of the game can reference a summon's max health.
+     */
+    getMaxHealth(): number {
+        const brawn = this.stats[Stat.Brawn] ?? HUMAN_AVERAGE;
+        const nerve = this.stats[Stat.Nerve] ?? HUMAN_AVERAGE;
+        return 20 + brawn * 5 + nerve * 3;
     }
 
     setDescription(description: string, outfitId: string = '') {
@@ -291,21 +332,23 @@ export function getStatDescription(stat: Stat | string): string {
     const key = typeof stat === 'string' ? stat : stat;
     switch (key) {
         case Stat.Brawn:
-            return 'physical condition and strength, with 10 being peak condition and 1 being critically impaired.';
+            return 'physical power and conditioning';
         case Stat.Skill:
-            return 'capability and ability to contribute meaningfully, with 10 being highly competent and 1 being a liability.';
+            return 'technical competence and finesse';
         case Stat.Nerve:
-            return 'courage and mental resilience, with 10 being indefatigably fearless and 1 being easily overwhelmed.';
+            return 'courage and mental resilience under pressure';
         case Stat.Wits:
-            return 'intelligence and awareness, with 10 being a genius and 1 being utterly oblivious.';
+            return 'intelligence, memory, and awareness';
         case Stat.Charm:
-            return 'personality appeal and tact, with 10 being extremely charismatic and 1 being socially inept.';
+            return 'personality appeal, tact, and social grace';
+        case Stat.Reflex:
+            return 'speed, reaction time, and agility';
         case Stat.Lust:
-            return 'physical lustiness and sexual confidence, with 10 being abjectly lewd and 1 being entirely asexual.';
+            return 'sexual confidence and physical desire';
         case Stat.Joy:
-            return 'happiness and positivity, with 10 being eternally optimistic and 1 being deeply depressed.';
+            return 'general happiness and positivity';
         case Stat.Trust:
-            return 'level of trust in the player character, with 10 being fully trusting and 1 being completely suspicious.';
+            return 'trust in and willingness to comply with the Summoner';
         default:
             return '';
     }
@@ -450,9 +493,11 @@ export async function loadReserveActor(data: any, stage: Stage, includeHistory: 
                 `VOICE: Output the specific voice ID from the Available Voices section that best matches the character's apparent gender (foremost) and personality.\n` +
                 `COLOR: A hex color that reflects the character's theme or mood—use darker or richer colors that will contrast with white text.\n` +
                 `FONT: A font stack, or font family that reflects the character's personality; this will be embedded in a CSS font-family property.\n` +
-                Object.entries(Stat).map(([key, value]) => {
-                    return `${key.toUpperCase()}: 1-10 scoring of ${getStatDescription(value).toLowerCase()}\n`;
-                }).join('\n') +
+                `CAPABILITY STATS (BRAWN, SKILL, NERVE, WITS, CHARM, REFLEX): score each 1-7 on ORDINARY HUMAN aptitude only. Anchors: 3 = an average adult (this is the default - most people are a 3), 5 = a trained specialist such as a soldier or seasoned professional, 6 = a master of their craft, 7 = the peak a human can reach (world-class). NEVER assign above 7 to ANY character, even a superhuman, alien, or god - their extraordinary power is recorded separately and must not inflate these human base scores.\n` +
+                `BOND STATS (LUST, JOY, TRUST): score each 1-7 on the character's current state, not power. Someone just torn from their life usually starts LOW on TRUST.\n` +
+                Object.values(Stat).map((value) => {
+                    return `${value.toUpperCase()}: 1-7 scoring of ${getStatDescription(value)}\n`;
+                }).join('') +
                 `#END#`) +
             buildPromptSegment(`Example Response`, 
                 `DESCRIPTION: A tall, athletic woman with short, dark hair and piercing blue eyes. She wears a simple, utilitarian outfit made from durable materials.\n` +
@@ -468,6 +513,7 @@ export async function loadReserveActor(data: any, stage: Stage, includeHistory: 
                 `NERVE: 7\n` +
                 `WITS: 6\n` +
                 `CHARM: 4\n` +
+                `REFLEX: 6\n` +
                 `LUST: 2\n` +
                 `JOY: 3\n` +
                 `TRUST: 2\n` +
@@ -502,12 +548,13 @@ export async function loadReserveActor(data: any, stage: Stage, includeHistory: 
     }
     // Create an Actor instance from the parsed data; ID should be generated uniquely
     const DEFAULT_TRAIT_MAP: Record<Stat, number> = {
-        [Stat.Brawn]: 3,
-        [Stat.Wits]: 4,
-        [Stat.Nerve]: 3,
-        [Stat.Skill]: 4,
-        [Stat.Charm]: 4,
-        [Stat.Lust]: 4,
+        [Stat.Brawn]: HUMAN_AVERAGE,
+        [Stat.Skill]: HUMAN_AVERAGE,
+        [Stat.Nerve]: HUMAN_AVERAGE,
+        [Stat.Wits]: HUMAN_AVERAGE,
+        [Stat.Charm]: HUMAN_AVERAGE,
+        [Stat.Reflex]: HUMAN_AVERAGE,
+        [Stat.Lust]: 3,
         [Stat.Joy]: 3,
         [Stat.Trust]: 1
     };
@@ -516,6 +563,13 @@ export async function loadReserveActor(data: any, stage: Stage, includeHistory: 
             parsedData['color'] :
             ['#788ebdff', '#d3aa68ff', '#75c275ff', '#c28891ff', '#55bbb2ff'][Math.floor(Math.random() * 5)];
     const generatedOutfitName = typeof parsedData['outfit'] === 'string' ? parsedData['outfit'].trim() : '';
+    // Base distillation never exceeds Rank 7 (peak human). Anything the LLM returns above that is
+    // clamped down here - superhuman/divine power is added later via traits (Pass 6) or SP, not base.
+    const clampBase = (raw: string, fallback: number): number => {
+        const n = parseInt(raw);
+        if (isNaN(n)) return fallback;
+        return Math.max(1, Math.min(BASE_DISTILL_MAX, n));
+    };
     const newActor = new Actor(
         generateUuid(),
         // Replace name quotation marks with single-quotes to avoid issues where nicknames are highlighted as dialogue:
@@ -528,14 +582,15 @@ export async function loadReserveActor(data: any, stage: Stage, includeHistory: 
         data.voiceId || parsedData['voice'] || '',
         {}, 
         {
-            [Stat.Brawn]: parseInt(parsedData['brawn']) || DEFAULT_TRAIT_MAP[Stat.Brawn],
-            [Stat.Wits]: parseInt(parsedData['wits']) || DEFAULT_TRAIT_MAP[Stat.Wits],
-            [Stat.Nerve]: parseInt(parsedData['nerve']) || DEFAULT_TRAIT_MAP[Stat.Nerve],
-            [Stat.Skill]: parseInt(parsedData['skill']) || DEFAULT_TRAIT_MAP[Stat.Skill],
-            [Stat.Charm]: parseInt(parsedData['charm']) || DEFAULT_TRAIT_MAP[Stat.Charm],
-            [Stat.Lust]: parseInt(parsedData['lust']) || DEFAULT_TRAIT_MAP[Stat.Lust],
-            [Stat.Joy]: parseInt(parsedData['joy']) || DEFAULT_TRAIT_MAP[Stat.Joy],
-            [Stat.Trust]: parseInt(parsedData['trust']) || DEFAULT_TRAIT_MAP[Stat.Trust]
+            [Stat.Brawn]: clampBase(parsedData['brawn'], DEFAULT_TRAIT_MAP[Stat.Brawn]),
+            [Stat.Skill]: clampBase(parsedData['skill'], DEFAULT_TRAIT_MAP[Stat.Skill]),
+            [Stat.Nerve]: clampBase(parsedData['nerve'], DEFAULT_TRAIT_MAP[Stat.Nerve]),
+            [Stat.Wits]: clampBase(parsedData['wits'], DEFAULT_TRAIT_MAP[Stat.Wits]),
+            [Stat.Charm]: clampBase(parsedData['charm'], DEFAULT_TRAIT_MAP[Stat.Charm]),
+            [Stat.Reflex]: clampBase(parsedData['reflex'], DEFAULT_TRAIT_MAP[Stat.Reflex]),
+            [Stat.Lust]: clampBase(parsedData['lust'], DEFAULT_TRAIT_MAP[Stat.Lust]),
+            [Stat.Joy]: clampBase(parsedData['joy'], DEFAULT_TRAIT_MAP[Stat.Joy]),
+            [Stat.Trust]: clampBase(parsedData['trust'], DEFAULT_TRAIT_MAP[Stat.Trust])
         },
         // Default to a random color from a small preset list of relatively neutral colors:
         // validate that parsedData is a valid hex color:

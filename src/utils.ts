@@ -1,13 +1,17 @@
 import { Stage } from "./Stage";
 
 /**
- * Converts a numeric score (1-10) to a letter grade
- * @param score - The score to convert (will be clamped between 1 and 10)
- * @returns A letter grade string (F, D, C, C+, B-, B, B+, A-, A, A+)
+ * Converts a numeric score (1-13) to a letter grade on the Summoner Game rank scale.
+ * @param score - The score to convert (clamped between 1 and 13)
+ * @returns A letter grade string (F, D, C, C+, B-, B, B+, A-, A, A+, S, SS, SSS)
+ *
+ * 1-7 is the human band (7 = peak human); 8-10 superhuman; 11-13 (S/SS/SSS) divine.
+ * Base distillation never exceeds 7 - ranks above that come from traits or SP.
  */
 export function scoreToGrade(score: number): string {
-    const scoreClamped = Math.max(1, Math.min(10, score));
-    const scoreArray = ['F', 'D', 'C', 'C+', 'B-', 'B', 'B+', 'A-', 'A', 'A+'];
+    if (typeof score !== 'number' || isNaN(score)) return '-';
+    const scoreClamped = Math.max(1, Math.min(13, Math.round(score)));
+    const scoreArray = ['F', 'D', 'C', 'C+', 'B-', 'B', 'B+', 'A-', 'A', 'A+', 'S', 'SS', 'SSS'];
     return scoreArray[scoreClamped - 1];
 }
 
@@ -22,7 +26,10 @@ export function gradeToScore(grade: string): number {
         'B+': 7,
         'A-': 8,
         'A': 9,
-        'A+': 10
+        'A+': 10,
+        'S': 11,
+        'SS': 12,
+        'SSS': 13
     };
     return gradeMap[grade] || 1; // Default to 1 if grade not found
 }
