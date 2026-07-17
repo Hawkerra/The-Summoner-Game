@@ -1,19 +1,20 @@
 /*
- * This is the screen where the player can manage characters in cryostasis.
- * Characters can be placed into cryo (locationId set to "cryo") or woken up.
+ * The Void - where inactive summons are stored, unaware of anything and untouched by time until they
+ * are called back out. Only one summon may be active in the world at once; the rest wait here. A
+ * summon defeated in an event is benched in the void for a rank-scaled number of turns before it can
+ * be summoned again (low-rarity recovers fast, high-rarity slowly).
+ *
+ * Exported as CryoScreen so BaseScreen routing is unchanged.
  */
 import React, { FC } from 'react';
 import { motion } from 'framer-motion';
 import { ScreenType } from './BaseScreen';
 import { Stage } from '../Stage';
-import Nameplate from '../components/Nameplate';
-import Actor, { Stat, ACTOR_STAT_ICONS } from '../actors/Actor';
+import Actor, { CAPABILITY_STATS, ACTOR_STAT_ICONS } from '../actors/Actor';
 import { scoreToGrade } from '../utils';
 import { BlurredBackground } from '../components/BlurredBackground';
-import { ActorCarousel } from '../components/CarouselStub';
-import AuthorLink from '../components/AuthorLink';
 import { Button } from '../components/UIComponents';
-import { SkitType } from '../Skit';
+import { ActorDetailScreen } from './ActorDetailScreen';
 
 interface CryoScreenProps {
 	stage: () => Stage;
@@ -21,462 +22,126 @@ interface CryoScreenProps {
 	isVerticalLayout: boolean;
 }
 
-export const CryoScreen: FC<CryoScreenProps> = ({stage, setScreenType, isVerticalLayout}) => {
+const StarRow: FC<{ actor: Actor }> = ({ actor }) => {
+	const s = actor.getStarRating();
+	return <span style={{ color: '#ffd453', letterSpacing: 1 }}>{'\u2605'.repeat(s)}{'\u2606'.repeat(5 - s)}</span>;
+};
 
-	const [selectedSlotIndex, setSelectedSlotIndex] = React.useState<number | null>(null);
-	const [expandedCandidateId, setExpandedCandidateId] = React.useState<string | null>(null);
-	const [selectedStationActorId, setSelectedStationActorId] = React.useState<string | null>(null); // For tap-to-select on mobile
-	const [, forceUpdate] = React.useReducer(x => x + 1, 0);
-	
-	// Get actors present on the station (locationId is '' or matches a module ID in the layout)
-	const stationActors = Object.values(stage().getSave().actors).filter(actor => {
-		if (['cryo', 'dead'].includes(actor.locationId)) return false;
-		if (actor.origin === 'aide') return false;
-		if (actor.factionId) return false;
-		if (actor.locationId === '') return true;
-		// Check if locationId matches a module ID
-		return stage().getSave().layout.getModuleById(actor.locationId) !== null;
-	});
+const SummonPortrait: FC<{ actor: Actor; stage: () => Stage; size: number }> = ({ actor, stage, size }) => {
+	const url = actor.getEmotionImage('neutral', stage());
+	return (
+		<div style={{
+			width: size, height: size, borderRadius: 12, flexShrink: 0,
+			backgroundImage: url ? `url(${url})` : undefined,
+			background: url ? undefined : `linear-gradient(160deg, ${actor.themeColor}55, transparent)`,
+			backgroundSize: 'cover', backgroundPosition: 'center top',
+			border: `2px solid ${actor.themeColor || '#b066ff'}`,
+		}} />
+	);
+};
 
-	// Get actors in cryo (locationId === 'cryo'), max 3 slots
-	const cryoSlots: (Actor | null)[] = [null, null, null];
-	const cryoActors = Object.values(stage().getSave().actors).filter(actor => actor.locationId === 'cryo');
-	cryoActors.slice(0, 3).forEach((actor, index) => {
-		cryoSlots[index] = actor;
-	});
+export const CryoScreen: FC<CryoScreenProps> = ({ stage, setScreenType }) => {
+	const [, setRefreshKey] = React.useState(0);
+	const [detailActor, setDetailActor] = React.useState<Actor | null>(null);
+	const refresh = () => setRefreshKey(k => k + 1);
 
-	const cancel = () => {
-		setScreenType(ScreenType.STATION);
-	};
+	const active = stage().getActiveSummon();
+	const voidSummons = stage().getVoidSummons();
 
-	// Handle Escape key to close the screen
 	React.useEffect(() => {
-		const handleKeyDown = (e: KeyboardEvent) => {
-			if (e.key === 'Escape') {
-				cancel();
-			}
-		};
-
-		window.addEventListener('keydown', handleKeyDown);
-		return () => {
-			window.removeEventListener('keydown', handleKeyDown);
-		};
+		const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setScreenType(ScreenType.STATION); };
+		window.addEventListener('keydown', onKey);
+		return () => window.removeEventListener('keydown', onKey);
 	}, []);
 
-	// Characters in cryo cannot be dragged out - they must be awakened using the Wake button
+	const summon = (actor: Actor) => { if (stage().setActiveSummon(actor.id)) refresh(); };
+	const banish = (actor: Actor) => { stage().desummonToVoid(actor.id); refresh(); };
 
-	// Wake a character from cryo
-	const wake = () => {
-		const selected = selectedSlotIndex != null ? cryoSlots[selectedSlotIndex] : null;
-		const availableQuarters = stage().getSave().layout.getModulesWhere(m => m?.type === 'quarters' && !m?.ownerId);
-		
-		if (selected && availableQuarters.length > 0) {
-			const firstRoom = availableQuarters[0];
-			// Assign the selected actor to the first available quarters
-			firstRoom.ownerId = selected.id;
-            setSelectedSlotIndex(null);
-            // Move actor to cryo module
-            const cryoModule = stage().getSave().layout.getModulesWhere(m => m?.type === 'cryo bank')[0];
-            if (cryoModule) {
-                // Set the actor's last known module to the cryo module
-                selected.locationId = cryoModule.id;
-            }
-			// Remove actor from cryo slot:
-			cryoSlots[selectedSlotIndex!] = null;
-			// find the last skit where they entered cryo to get the date
-			const entranceEvent = stage().getSave().timeline?.reverse().find(event => event.skit?.actorId === selected.id && event.skit?.type === SkitType.ENTER_CRYO);
-			const entranceDate = entranceEvent ? entranceEvent.day : stage().getSave().day;
-            // Have a skit to debrief the actor
-            stage().setSkit({
-                actorId: selected.id,
-                type: SkitType.EXIT_CRYO,
-                moduleId: cryoModule.id,
-                context: {days: stage().getSave().day - entranceDate},
-                script: []
-            });
-            setScreenType(ScreenType.SKIT);
-		}
+	const cardStyle: React.CSSProperties = {
+		display: 'flex', alignItems: 'center', gap: 12, padding: 12, borderRadius: 12,
+		background: 'rgba(18,10,32,0.7)', border: '1px solid rgba(176,102,255,0.25)', marginBottom: 10,
 	};
 
-	const handleDragStart = (e: React.DragEvent, actor: Actor) => {
-		e.dataTransfer.setData('application/json', JSON.stringify({
-			actorId: actor.id,
-			source: 'station'
-		}));
-
-		// Create custom drag image to show only the current card
-		const dragElement = e.currentTarget as HTMLElement;
-		const dragImage = dragElement.cloneNode(true) as HTMLElement;
-		dragImage.style.position = 'absolute';
-		dragImage.style.top = '-9999px';
-		dragImage.style.width = dragElement.offsetWidth + 'px';
-		dragImage.style.height = dragElement.offsetHeight + 'px';
-		document.body.appendChild(dragImage);
-		
-		e.dataTransfer.setDragImage(dragImage, dragElement.offsetWidth / 2, dragElement.offsetHeight / 2);
-		
-		// Clean up the temporary drag image after a short delay
-		setTimeout(() => {
-			document.body.removeChild(dragImage);
-		}, 0);
-	};
-
-	const handleDragOver = (e: React.DragEvent) => {
-		e.preventDefault();
-	};
-
-	// Common function to place an actor into a cryo slot
-	const placeActorInCryo = (actor: Actor, slotIndex: number) => {
-		// Don't allow placement in occupied slots
-		const existingActor = cryoSlots[slotIndex];
-		if (existingActor) {
-			return false; // Slot is occupied
-		}
-		
-		// Move actor into cryo
-		actor.locationId = 'cryo';
-		
-		// Clear actor from ownership on their quarters
-		const quarters = stage().getSave().layout.getModulesWhere(m => m?.type === 'quarters' && m?.ownerId === actor.id);
-		quarters.forEach(q => {
-			q.ownerId = '';
-		});
-		
-		// Clear actor from any module where they hold a role
-		const roleModules = stage().getSave().layout.getModulesWhere(m => m?.type !== 'quarters' && m?.ownerId === actor.id);
-		roleModules.forEach(m => {
-			m.ownerId = '';
-		});
-
-		// Add timeline event
-		stage().pushToTimeline(stage().getSave(), `${actor.name} sent home through the Homeward Gate.`, 
-			{
-				actorId: actor.id,
-				type: SkitType.ENTER_CRYO,
-				moduleId: stage().getSave().layout.getModulesWhere(m => m?.type === 'cryo bank')[0]?.id || '',
-				summary: `${actor.name} was sent home through the Homeward Gate.`,
-				script: [],
-				context: {}
-			}
-		);
-		
-		forceUpdate();
-		return true;
-	};
-
-	// Tap-to-select handler for mobile
-	const handleStationActorClick = (actorId: string) => {
-		if (selectedStationActorId === actorId) {
-			// Deselect if already selected
-			setSelectedStationActorId(null);
-		} else {
-			// Select the actor
-			setSelectedStationActorId(actorId);
-		}
-	};
-
-	// Handler for clicking a cryo slot with a station actor selected
-	const handleCryoSlotClick = (slotIndex: number) => {
-		if (selectedStationActorId) {
-			// Place the selected station actor in this slot
-			const actor = stage().getSave().actors[selectedStationActorId];
-			
-			if (actor && placeActorInCryo(actor, slotIndex)) {
-				setSelectedStationActorId(null);
-			}
-			// If placement failed (slot occupied), keep actor selected
-		} else {
-			// No station actor selected, handle normal slot selection
-			const actor = cryoSlots[slotIndex];
-			setSelectedSlotIndex(actor ? slotIndex : null);
-		}
-	};
-
-	const handleDropOnCryoSlot = (e: React.DragEvent, slotIndex: number) => {
-		e.preventDefault();
-		const data = JSON.parse(e.dataTransfer.getData('application/json'));
-		const actor = stage().getSave().actors[data.actorId];
-		
-		if (actor && data.source === 'station') {
-			placeActorInCryo(actor, slotIndex);
-		}
-	};
-
-	// Characters in cryo cannot be dragged back to station - they must be awakened using the Wake button
-
-	const module = stage().getSave().layout.getModulesWhere(m => m?.type === 'cryo bank')[0]!;
-	const availableQuarters = stage().getSave().layout.getModulesWhere(m => m?.type === 'quarters' && !m?.ownerId) || [];
-	const selectedActor = selectedSlotIndex != null ? cryoSlots[selectedSlotIndex] : null;
-	const acceptable = selectedActor && availableQuarters.length > 0;
-	const allCryoSlotsFull = cryoSlots.every(slot => slot !== null);
-	const background = stage().getSave().actors[module.ownerId || '']?.decorImageUrls[module.type] || module.getAttribute('defaultImageUrl')
-
+	const statChips = (actor: Actor) => (
+		<div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 8px', fontSize: '0.72rem', opacity: 0.85 }}>
+			{CAPABILITY_STATS.map(stat => {
+				const Icon = ACTOR_STAT_ICONS[stat];
+				return (
+					<span key={stat} style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+						{Icon && <Icon style={{ fontSize: '0.8rem', opacity: 0.7 }} />}
+						<b>{scoreToGrade(actor.stats[stat])}</b>
+					</span>
+				);
+			})}
+		</div>
+	);
 
 	return (
-		<BlurredBackground imageUrl={background}>
-			<div style={{ 
-				display: 'flex', 
-				flexDirection: 'column', 
-				height: '100vh', 
-				width: '100vw'
-			}}>
-			{/* Station actors carousel at top */}
-			<ActorCarousel
-				actors={stationActors}
-				stage={stage()}
-				isVerticalLayout={isVerticalLayout}
-				expandedActorId={expandedCandidateId}
-				onExpandActor={setExpandedCandidateId}
-				borderColor="rgba(0,200,255,0.2)"
-				glowColor="rgba(0, 200, 255, 0.4)"
-				showRemoveButton={false}
-				draggable={!allCryoSlotsFull}
-				onDragStart={handleDragStart}
-				selectedActorId={selectedStationActorId}
-				onActorClick={allCryoSlotsFull ? undefined : handleStationActorClick}
-			/>
-			{/* Cryo slots in center with buttons on sides or bottom */}
-			<div style={{ 
-				flex: '1 1 auto', 
-				display: 'flex', 
-				flexDirection: isVerticalLayout ? 'column' : 'row',
-				alignItems: 'center', 
-				justifyContent: 'center', 
-				padding: isVerticalLayout ? '20px' : '40px',
-				gap: isVerticalLayout ? '20px' : '40px'
-			}}>
-				{/* Cancel button on the left (or in button row below if vertical) */}
-				{!isVerticalLayout && (
-					<Button
-						variant="secondary"
-						onClick={cancel}
-					>
-						Back
-					</Button>
-				)}
+		<div style={{ position: 'relative', width: '100vw', height: '100vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+			<BlurredBackground imageUrl={active ? active.getEmotionImage('neutral', stage()) : ''} />
+			<div style={{ position: 'absolute', inset: 0, background: 'rgba(6,4,12,0.72)' }} />
 
-				{/* Cryo slots container */}
-				<div style={{ display: 'flex', gap: isVerticalLayout ? '20px' : '40px', alignItems: 'flex-end', justifyContent: 'center', flex: 1 }}>
-					{cryoSlots.map((actor, slotIndex) => {
-						const isSelected = selectedSlotIndex === slotIndex;
+			<div style={{ position: 'relative', zIndex: 1, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px' }}>
+				<Button onClick={() => setScreenType(ScreenType.STATION)}>Back</Button>
+				<span style={{ letterSpacing: '0.08em', opacity: 0.85 }}>THE VOID</span>
+				<span style={{ width: 64 }} />
+			</div>
 
-						return (
-							<motion.div
-								key={`cryo_slot_${slotIndex}`}
-							onClick={() => handleCryoSlotClick(slotIndex)}
-								onDrop={(e) => handleDropOnCryoSlot(e, slotIndex)}
-								onDragOver={handleDragOver}
-								animate={{
-									scale: (actor && isSelected) ? 1.05 : 1,
-									y: [0, -3, -1, -4, 0],
-									x: [0, 1, -1, 0.5, 0],
-									rotate: [0, 0.5, -0.3, 0.2, 0],
-									transition: {
-										scale: {
-											type: "spring",
-											stiffness: 150,
-											damping: 15
-										},
-										y: {
-											duration: 6,
-											repeat: Infinity,
-											ease: "easeInOut",
-											delay: slotIndex * 0.7
-										},
-										x: {
-											duration: 6,
-											repeat: Infinity,
-											ease: "easeInOut",
-											delay: slotIndex * 0.7
-										},
-										rotate: {
-											duration: 6,
-											repeat: Infinity,
-											ease: "easeInOut",
-											delay: slotIndex * 0.7
-										}
-									}
-								}}
-								whileHover={{ 
-									scale: actor ? (isSelected ? 1.1 : 1.05) : 1,
-									filter: 'brightness(1.1)',
-									transition: {
-										type: "spring",
-										stiffness: 150,
-										damping: 15
-									}
-								}}
-								whileTap={{ scale: actor ? 0.98 : 1 }}
-								style={{
-									cursor: actor ? 'pointer' : 'default',
-									height: isVerticalLayout ? '50vh' : '65vh',
-									width: isVerticalLayout ? '28vw' : '18vw',
-									display: 'flex',
-									flexDirection: 'column',
-									justifyContent: actor ? 'flex-end' : 'center',
-									alignItems: actor ? 'stretch' : 'center',
-									borderRadius: 12,
-									overflow: 'hidden',
-									background: actor ? undefined : 'linear-gradient(135deg, rgba(0,200,255,0.15), rgba(100,150,255,0.1))',
-									border: isSelected
-										? `5px solid ${actor?.themeColor || '#ffffff'}` 
-										: selectedStationActorId
-											? '4px solid rgba(255,215,0,0.8)' // Gold border when ready to place
-											: actor 
-												? `4px solid ${actor.themeColor || '#00c8ff'}`
-												: '3px dashed rgba(0,200,255,0.5)',
-									boxShadow: isSelected
-										? `0 12px 40px ${actor?.themeColor ? actor.themeColor + '40' : 'rgba(0,200,255,0.25)'}, inset 0 0 50px ${actor?.themeColor ? actor.themeColor + '20' : 'rgba(0,200,255,0.1)'}` 
-										: actor
-											? `0 8px 25px rgba(0,0,0,0.4), inset 0 0 30px ${actor.themeColor ? actor.themeColor + '15' : 'rgba(0,200,255,0.05)'}, 0 0 20px ${actor.themeColor ? actor.themeColor + '30' : 'rgba(0,200,255,0.1)'}`
-											: '0 8px 25px rgba(0,0,0,0.4), inset 0 0 30px rgba(0,200,255,0.05)',
-									position: 'relative',
-								}}
-							>
-								{/* Background layers for actor slots */}
-								{actor && (
-									<>
-										{/* Actor portrait image layer */}
-										<div 
-											style={{
-												position: 'absolute',
-												top: 0,
-												left: 0,
-												width: '100%',
-												height: '100%',
-												backgroundImage: `url(${actor.getEmotionImage('neutral', stage())})`,
-												backgroundSize: 'cover',
-												backgroundPosition: 'center top',
-												backgroundRepeat: 'no-repeat',
-												zIndex: 0,
-											}}
-										/>
-										{/* Gradient overlay layer */}
-										<div 
-											style={{
-												position: 'absolute',
-												top: 0,
-												left: 0,
-												width: '100%',
-												height: '100%',
-												background: `linear-gradient(
-													135deg, 
-													rgba(0, 200, 255, 0.15) 0%, 
-													rgba(100, 150, 255, 0.1) 50%, 
-													rgba(109, 87, 131, 0.15) 100%
-												)`,
-												mixBlendMode: 'overlay',
-												zIndex: 1,
-											}}
-										/>
-									</>
-								)}
-							{actor ? (
-								<>
-									{/* Spacer to push the nameplate and stats down about 30vh */}
-									<div style={{ flex: '0 0 30vh', position: 'relative', zIndex: 2 }}></div>
-									{/* Actor nameplate */}
-									<Nameplate 
-										actor={actor} 
-										size="medium"
-										role={(() => {
-											const roleModules = stage().getSave().layout.getModulesWhere((m: any) => 
-												m && m.type !== 'quarters' && m.ownerId === actor.id
-											);
-											return roleModules.length > 0 ? roleModules[0].getAttribute('role') : undefined;
-										})()}
-										layout="stacked"
-										style={{
-											padding: 'clamp(8px, 1.5vmin, 16px) clamp(10px, 2vmin, 20px)',
-											fontSize: 'clamp(14px, 2.2vmin, 20px)',
-											position: 'relative',
-											zIndex: 2
-										}}
-									/>
-								{/* Stats */}
-								<div className="stat-list" style={{ padding: 'clamp(6px, 1vmin, 10px) clamp(8px, 1.5vmin, 14px)', background: 'rgba(0,0,0,0.8)', flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-evenly', position: 'relative', zIndex: 2 }}>
-										{Object.values(Stat).map((stat) => {
-											const grade = scoreToGrade(actor.stats[stat]);
-											const StatIcon = ACTOR_STAT_ICONS[stat];
-											return (
-												<div className="stat-row" key={`${actor.id}_${stat}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-													<div style={{ display: 'flex', alignItems: 'center', gap: 'clamp(4px, 0.8vmin, 8px)' }}>
-														{StatIcon && <StatIcon style={{ fontSize: 'clamp(0.8rem, 2vmin, 1.2rem)', opacity: 0.8, flexShrink: 0 }} />}
-														<span className="stat-label">{stat}</span>
-													</div>
-													<span className="stat-grade" data-grade={grade}>{grade}</span>
-												</div>
-												);
-										})}
-										{/* Author link */}
-										<AuthorLink actor={actor} />
-									</div>
-								</>
-							) : (
-								<div style={{ 
-									color: selectedStationActorId ? 'rgba(255,215,0,0.9)' : 'rgba(0,200,255,0.7)', 
-									fontSize: 'clamp(14px, 2.2vmin, 20px)', 
-									textAlign: 'center',
-									padding: 'clamp(12px, 2.5vmin, 24px)',
-									transition: 'color 0.3s ease'
-								}}>
-									{selectedStationActorId ? 'Tap here to send this character home' : 'Drag or tap a character above, then tap a slot to send them home'}
-								</div>
-							)}
-								</motion.div>
-						);
-					})}
-				</div>
-
-				{/* Wake button on the right (or in button row below if vertical) */}
-				{!isVerticalLayout && (
-					<Button
-						variant="primary"
-						onClick={wake}
-						disabled={!acceptable}
-						style={{
-							background: acceptable ? 'var(--color-primary)' : 'rgba(255,255,255,0.06)',
-							color: acceptable ? '#1a0533' : '#9aa0a6'
-						}}
-					>
-						{availableQuarters.length === 0 
-							? 'No Available Quarters' 
-							: selectedActor 
-								? 'Recall Character'
-								: 'Select a Character'
-						}
-					</Button>
-				)}
-
-				{/* Button row for vertical layout */}
-				{isVerticalLayout && (
-					<div style={{ display: 'flex', gap: '20px', justifyContent: 'center', width: '100%' }}>
-						<Button
-							variant="secondary"
-							onClick={cancel}
-						>
-							Cancel
-						</Button>
-						<Button
-							variant="primary"
-							onClick={wake}
-							disabled={!acceptable}
-							style={{
-								background: acceptable ? 'var(--color-primary)' : 'rgba(255,255,255,0.06)',
-								color: acceptable ? '#1a0533' : '#9aa0a6'
-							}}
-						>
-							{availableQuarters.length === 0 
-								? 'No Available Quarters' 
-								: selectedActor 
-									? 'Recall Character'
-									: 'Select a Character'
-							}
-						</Button>
+			<div style={{ position: 'relative', zIndex: 1, flex: 1, overflowY: 'auto', padding: '4px 16px 24px', maxWidth: 640, width: '100%', margin: '0 auto', boxSizing: 'border-box' }}>
+				{/* Active summon */}
+				<div style={{ fontSize: '0.8rem', opacity: 0.6, margin: '4px 0 8px' }}>IN THE WORLD</div>
+				{active ? (
+					<div style={cardStyle}>
+						<div onClick={() => setDetailActor(active)} style={{ cursor: 'pointer' }}><SummonPortrait actor={active} stage={stage} size={72} /></div>
+						<div style={{ flex: 1, minWidth: 0 }}>
+							<div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+								<b style={{ color: active.themeColor || '#b066ff' }}>{active.name}</b>
+								<StarRow actor={active} />
+							</div>
+							{statChips(active)}
+						</div>
+						<Button onClick={() => banish(active)}>To void</Button>
 					</div>
+				) : (
+					<div style={{ ...cardStyle, opacity: 0.6, justifyContent: 'center' }}>No summon is active.</div>
 				)}
+
+				{/* Void roster */}
+				<div style={{ fontSize: '0.8rem', opacity: 0.6, margin: '18px 0 8px' }}>IN THE VOID ({voidSummons.length})</div>
+				{voidSummons.length === 0 && (
+					<div style={{ ...cardStyle, opacity: 0.6, justifyContent: 'center' }}>The void is empty. Summon more people from the app.</div>
+				)}
+				{voidSummons.map(actor => {
+					const recovering = stage().isSummonRecovering(actor);
+					const left = stage().recoveryTurnsLeft(actor);
+					return (
+						<motion.div key={actor.id} style={cardStyle} initial={{ opacity: 0, y: 6 }} animate={{ opacity: recovering ? 0.7 : 1, y: 0 }}>
+							<div onClick={() => setDetailActor(actor)} style={{ cursor: 'pointer', filter: recovering ? 'grayscale(0.6)' : 'none' }}>
+								<SummonPortrait actor={actor} stage={stage} size={64} />
+							</div>
+							<div style={{ flex: 1, minWidth: 0 }}>
+								<div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+									<b style={{ color: actor.themeColor || '#b066ff' }}>{actor.name}</b>
+									<StarRow actor={actor} />
+								</div>
+								{statChips(actor)}
+								{recovering && (
+									<div style={{ fontSize: '0.72rem', color: '#ff9a6a', marginTop: 4 }}>
+										Recovering &mdash; {left} turn{left === 1 ? '' : 's'} left
+									</div>
+								)}
+							</div>
+							<Button onClick={() => summon(actor)} disabled={recovering}>
+								{recovering ? 'Resting' : 'Summon'}
+							</Button>
+						</motion.div>
+					);
+				})}
 			</div>
-			</div>
-		</BlurredBackground>
+
+			{detailActor && (
+				<ActorDetailScreen actor={detailActor} stage={stage} onClose={() => setDetailActor(null)} />
+			)}
+		</div>
 	);
-}
+};

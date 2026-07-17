@@ -1098,8 +1098,8 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
         if (!save.activeActorId || !save.actors[save.activeActorId]) {
             save.activeActorId = actor.id;
         }
-        // Placeholder location until the Location graph lands (Pass 4); 'home' is the root-to-be.
-        actor.locationId = actor.locationId || 'home';
+        // Land the new summon wherever the player currently is.
+        actor.locationId = this.getCurrentLocationId();
         this.setSkit({
             type: SkitType.INTRO_CHARACTER,
             actorId: actor.id,
@@ -1129,7 +1129,7 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
         const save = this.getSave();
         if (!save.locations) save.locations = {};
         if (!save.locations[HOME_LOCATION_ID]) {
-            save.locations[HOME_LOCATION_ID] = createHomeLocation(save.turn || 0);
+            save.locations[HOME_LOCATION_ID] = createHomeLocation(this.getElapsedTurns());
         }
         if (!save.currentLocationId || !save.locations[save.currentLocationId]) {
             save.currentLocationId = HOME_LOCATION_ID;
@@ -1153,7 +1153,7 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
         const dest = locations[id];
         if (!dest) return;
         dest.archived = false;
-        dest.lastVisitedTurn = this.getSave().turn || 0;
+        dest.lastVisitedTurn = this.getElapsedTurns();
         this.getSave().currentLocationId = id;
         this.archiveStaleLocations();
         this.saveGame();
@@ -1168,7 +1168,7 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
     spawnSubLocation(parentId: string, spec: { name: string; description: string; population?: string; tags?: string[] }): GameLocation {
         const locations = this.getLocations();
         const parent = locations[parentId] || locations[HOME_LOCATION_ID];
-        const loc = createLocation({ ...spec, parentId: parent.id, turn: this.getSave().turn || 0 });
+        const loc = createLocation({ ...spec, parentId: parent.id, turn: this.getElapsedTurns() });
         locations[loc.id] = loc;
         if (!parent.childIds.includes(loc.id)) parent.childIds.push(loc.id);
         this.saveGame();
@@ -1177,7 +1177,7 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
 
     /** Home never archives; any other location unvisited for ARCHIVE_AFTER_TURNS turns is archived. */
     archiveStaleLocations(): void {
-        const turn = this.getSave().turn || 0;
+        const turn = this.getElapsedTurns();
         for (const loc of Object.values(this.getLocations())) {
             if (loc.isHome) { loc.archived = false; continue; }
             loc.archived = (turn - loc.lastVisitedTurn) >= ARCHIVE_AFTER_TURNS;
@@ -1202,6 +1202,88 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
             loc.backgroundPending = false;
             this.saveGame();
         }
+    }
+
+    // ---- The void & active summon --------------------------------------------------------------
+
+    /** Monotonic elapsed-turn count (day*4 + turn). Used for archiving and recovery timers, since
+     *  save.turn alone only cycles 0-3 within a day. */
+    getElapsedTurns(): number {
+        const save = this.getSave();
+        return (save.day || 1) * 4 + (save.turn || 0);
+    }
+
+    /** The player's summons (origin 'patient'), across both the world and the void. */
+    getRosterSummons(): Actor[] {
+        return Object.values(this.getSave().actors).filter(a => a && a.origin === 'patient');
+    }
+
+    getActiveSummon(): Actor | null {
+        const id = this.getSave().activeActorId;
+        return id ? (this.getSave().actors[id] || null) : null;
+    }
+
+    /** Summons currently in the void (stored, unaware, no passage of time). */
+    getVoidSummons(): Actor[] {
+        const activeId = this.getSave().activeActorId;
+        return this.getRosterSummons().filter(a => a.id !== activeId);
+    }
+
+    isSummonRecovering(actor: Actor): boolean {
+        return actor.isRecovering(this.getElapsedTurns());
+    }
+
+    /** Turns of recovery a summon still has left (0 if available). */
+    recoveryTurnsLeft(actor: Actor): number {
+        if (actor.recoveryUntilTurn == null) return 0;
+        return Math.max(0, actor.recoveryUntilTurn - this.getElapsedTurns());
+    }
+
+    /**
+     * Make a summon the active one, pulling the current active back into the void. A summon still
+     * recovering can't be summoned. Returns true on success. The void is timeless: a stored summon
+     * simply steps back out, unaware of any gap.
+     */
+    setActiveSummon(actorId: string): boolean {
+        const save = this.getSave();
+        const target = save.actors[actorId];
+        if (!target || target.origin !== 'patient') return false;
+        if (this.isSummonRecovering(target)) return false;
+        // Current active steps into the void.
+        const current = this.getActiveSummon();
+        if (current && current.id !== actorId) {
+            current.locationId = 'cryo';
+        }
+        target.locationId = this.getCurrentLocationId();
+        target.recoveryUntilTurn = undefined; // fully recovered by the time it's re-summoned
+        save.activeActorId = actorId;
+        this.saveGame();
+        return true;
+    }
+
+    /** Voluntarily send the active summon back into the void, leaving no one active. */
+    desummonToVoid(actorId: string): void {
+        const save = this.getSave();
+        const actor = save.actors[actorId];
+        if (!actor) return;
+        actor.locationId = 'cryo';
+        if (save.activeActorId === actorId) save.activeActorId = undefined;
+        this.saveGame();
+    }
+
+    /**
+     * Defeat handling: the summon is desummoned into the void and benched for a rank-scaled number
+     * of turns. It is NOT killed (summons are effectively immortal) - only the Summoner's defeat is
+     * permanent. Event resolution (Pass 7) calls this; exposed now so recovery is testable.
+     */
+    defeatSummon(actorId: string): void {
+        const save = this.getSave();
+        const actor = save.actors[actorId];
+        if (!actor) return;
+        actor.locationId = 'cryo';
+        actor.recoveryUntilTurn = this.getElapsedTurns() + actor.getRecoveryDuration();
+        if (save.activeActorId === actorId) save.activeActorId = undefined;
+        this.saveGame();
     }
 
     async loadReserveFactions() {
