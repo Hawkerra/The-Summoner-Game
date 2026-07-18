@@ -265,6 +265,9 @@ export const SkitScreen: FC<SkitScreenProps> = ({ stage, setScreenType, isVertic
     const [showRewind, setShowRewind] = React.useState(false);
     const [rewindTarget, setRewindTarget] = React.useState<number | null>(null);
     const [rewinding, setRewinding] = React.useState(false);
+    // Bumped after each rewind: remounts the NovelVisualizer so every scrap of its internal
+    // script/display state re-initializes from the truncated skit.
+    const [rewindEpoch, setRewindEpoch] = React.useState(0);
 
     const doRewind = async (index: number) => {
         if (rewinding) return;
@@ -275,6 +278,7 @@ export const SkitScreen: FC<SkitScreenProps> = ({ stage, setScreenType, isVertic
             setRewinding(false);
             setShowRewind(false);
             setRewindTarget(null);
+            setRewindEpoch(e => e + 1);
             const updated = stage().getSave().currentSkit;
             if (updated) onSkitChange(updated);
         }
@@ -440,6 +444,7 @@ export const SkitScreen: FC<SkitScreenProps> = ({ stage, setScreenType, isVertic
                     </IconButton>
                 </div>
                     <NovelVisualizer
+                        key={`nv-rewind-${rewindEpoch}`}
                         skit={skit}
                         loading={isLoading}
                         renderNameplate={(actor: any) => {

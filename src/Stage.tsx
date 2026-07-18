@@ -1685,7 +1685,10 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
         if (!skit || skit.generating) return;
         if (index < 0 || index >= skit.script.length - 1) return; // nothing after this point - no-op
 
-        skit.script = skit.script.slice(0, index + 1);
+        // Truncate IN PLACE: the NovelVisualizer captures a reference to this array internally,
+        // so replacing it with a slice() left the component rendering the old, full script - the
+        // discarded messages visibly reappeared. Splice mutates the array everyone is holding.
+        skit.script.splice(index + 1);
         skit.currentIndex = index;
         skit.outcomes = [];            // stale - they described the discarded ending
         skit.spMultiplier = undefined; // re-earned by the regeneration below if still warranted
