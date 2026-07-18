@@ -46,14 +46,26 @@ export const HomeScreen: FC<HomeScreenProps> = ({ stage, setScreenType }) => {
     const travel = (id: string) => { stage().travelToLocation(id); refresh(); };
 
     const explore = () => {
-        // Discover a curated place not already hanging off here (stand-in until skits generate them).
+        // Discover a place (or use where we are) and stage an actual scene there, rather than
+        // silently dropping a location into the menu. Works with or without an active summon.
+        let target = current;
         const existingNames = new Set(children.map(c => c.name));
         const options = DISCOVERABLE_PLACES.filter(p => !existingNames.has(p.name));
-        if (options.length === 0) return;
-        const pick = options[Math.floor(Math.random() * options.length)];
-        const loc = stage().spawnSubLocation(current.id, pick);
-        stage().travelToLocation(loc.id);
-        refresh();
+        if (options.length > 0) {
+            const pick = options[Math.floor(Math.random() * options.length)];
+            target = stage().spawnSubLocation(current.id, pick);
+        }
+        stage().travelToLocation(target.id);
+        const activeId = stage().getSave().activeActorId;
+        stage().setSkit({
+            type: SkitType.RANDOM_ENCOUNTER,
+            actorId: activeId || undefined,
+            moduleId: target.id,
+            script: [],
+            generating: true,
+            context: {},
+        });
+        setScreenType(ScreenType.SKIT);
     };
 
     const spendTime = () => {

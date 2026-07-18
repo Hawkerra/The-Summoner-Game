@@ -120,43 +120,25 @@ export function generateSkitTypePrompt(skit: SkitData, stage: Stage, continuing:
                 `This scene depicts the Summoner spending time with their active summon, ${actor.name}. Bear in mind that ${actor.name} was pulled from their own life into this world and may still be adjusting, and may be unaware of details of this modern world. ` +
                     `Potentially explore ${actor.name}'s thoughts, feelings, or troubles in this quiet, personal moment.` :
                 `Continue this scene with ${actor.name}, potentially exploring their thoughts, feelings, or troubles in this intimate setting.`;
-        case SkitType.RANDOM_ENCOUNTER:
-            // Create a random plot suggestion for the encounter; choose a random present character as central
-            const presentCharacters = Object.values(stage.getSave().actors).filter(a => {a.locationId === skit.moduleId && !a.factionId});
-            const centralCharacter = presentCharacters.length > 0 ? presentCharacters[Math.floor(Math.random() * presentCharacters.length)] : null;
-            const offStationCharacters = Object.values(stage.getSave().actors).filter(a => a.isOffSite(stage.getSave()) && !a.factionId);
-            const offStationCharacter = offStationCharacters.length > 0 ? offStationCharacters[Math.floor(Math.random() * offStationCharacters.length)] : null;
-            const plotSuggestions = [
-                // If off-station character has been gone a couple days, they could return (perhaps unexpectedly)
-                (offStationCharacter ? `${offStationCharacter.name}, who has been away on assignment, might be scheduled to return now (or perhaps is returning unexpectedly early). This scene may feature discussion about their return or depict the actual moment of return.` : null),
-                // If it's been a few days since 'birth' and this character has no role nd there are muliple open roles, this character may express an interestin in an unfilledd position:
-                (centralCharacter && (stage.getSave().layout.getModulesWhere(module => module.ownerId === centralCharacter.id && module.type !== 'quarters').length === 0) && (stage.getSave().day - (stage.getSave().timeline?.find(event => event.skit?.actorId === centralCharacter.id && event.skit?.type === SkitType.INTRO_CHARACTER)?.day || stage.getSave().day) >= 3) ?
-                    `Having been at the Spire for a few days now, ${centralCharacter.name} may express an interest in taking on one of the unoccupied roles around the tower; consider whether any of the current options make sense: ${stage.getSave().layout.getModulesWhere(module => module.type !== 'quarters' && !module.ownerId).map(module => `${module.getAttribute('role')} (${module.getAttribute('name')})`).join(', ')}. ` : null),
-                // The character could express an interest in an unowned module (if there are some unowned modules)
-                (centralCharacter && Object.keys(MODULE_TEMPLATES).some(moduleType => stage.getSave().layout.getModulesWhere(module => module.type === moduleType).length === 0) ?
-                    `${centralCharacter.name} may express an interest in adding a room that the Spire is currently missing; consider whether any of these options make sense: ${Object.keys(MODULE_TEMPLATES).filter(moduleType => stage.getSave().layout.getModulesWhere(module => module.type === moduleType).length === 0).map(moduleType => `${MODULE_TEMPLATES[moduleType].name}`).join(', ')}. ` : null),
-                // If some faction is active and friendly, maybe talk about them:
-                (Object.values(stage.getSave().factions).some(faction => faction.active && faction.reputation >= 3) ?
-                    `Discuss the Spire's current relationships with ${Object.values(stage.getSave().factions).find(faction => faction.active && faction.reputation >= 3)?.name || 'an active and friendly faction'}, and any potential offers or missions that might be available to residents of the tower.` : null),
-                // If some station stat is high, maybe have an event that reflects that while pushing it downward:
-                (Object.values(StationStat).some(stat => (stage.getSave().stationStats?.[stat] || 3) >= 7) ?
-                    `An event occurs that reflects the Spire's high ${Object.values(StationStat).find(stat => (stage.getSave().stationStats?.[stat] || 3) >= 7) || 'Systems'} stat, but also threatens to lower it.` :  '') +
-                // If some station stat is low, maybe have an event that reflects that while pushing it up:
-                (Object.values(StationStat).some(stat => (stage.getSave().stationStats?.[stat] || 3) <= 3) ?
-                    `An event occurs that reflects the Spire's low ${Object.values(StationStat).find(stat => (stage.getSave().stationStats?.[stat] || 3) <= 3) || 'Morale'} stat, but also offers an opportunity to raise it.` :  ''),
-                // If there is another patient on the PARC maybe focus on centralCharacter's relationhip or thoughts on them:
-                (centralCharacter && Object.values(stage.getSave().actors).filter(actor => actor.origin === 'patient').length > 1 ?
-                    `Explore ${centralCharacter.name}'s thoughts or feelings about other residents of the Spire, such as ${Object.values(stage.getSave().actors).filter(actor => actor.origin === 'patient' && actor.id !== centralCharacter.id).map(actor => actor.name)[0]}.` : null), 
-                // Generic suggestion:
-                `Explore the setting and what might arise from this unexpected meeting.`
-            ].filter(s => s !== null);
-            const randomSuggestion = plotSuggestions.length > 0 ? plotSuggestions[Math.floor(Math.random() * plotSuggestions.length)] : 'Explore the setting and what might arise from this unexpected meeting.';
-
-            return !continuing ?
-                `This scene depicts a chance encounter in the ${module?.getAttribute('name') || 'unknown'}${module?.ownerId ? ` which has been redecorated to suit ${stage.getSave().actors[module.ownerId]?.name || 'its owner'}'s style (${stage.getSave().actors[module.ownerId]?.style})` : ''}. ` +
-                `Bear in mind that residents are from other worlds, and may be unaware of details of this one. ` +
-                    randomSuggestion :
-                `Continue this chance encounter in the ${module?.getAttribute('name') || 'unknown'}. ${randomSuggestion}.`;
+        case SkitType.RANDOM_ENCOUNTER: {
+            const loc = stage.getSave().locations?.[skit.moduleId || ''];
+            const locName = loc?.name || 'somewhere out in the city';
+            const locDesc = loc?.description || '';
+            const locPop = loc?.population || '';
+            const activeSummon = stage.getSave().actors[stage.getSave().activeActorId || ''];
+            const withSummon = activeSummon
+                ? `The Summoner's active summon, ${activeSummon.name}, is here with them; involve ${activeSummon.name} naturally. `
+                : `The Summoner is exploring ALONE - no summon is active. Lean on NARRATOR framing, and where it fits, introduce one or two incidental NPCs (a clerk, a stranger, a regular) for them to encounter. Keep such NPCs light and unnamed unless they clearly come to matter. `;
+            // Occasionally, the app nudges the player toward summoning - softly, never forcing action.
+            const phoneNudge = Math.random() < 0.4
+                ? `At some fitting moment, the Summoner's phone buzzes or chimes on its own - the strange app making itself known, a little more insistent than before. Convey lightly that it wants to be opened (a summon awaits), but do NOT force the Summoner to act on it or drag them into the app; it is a background prod, not a command. `
+                : '';
+            return !continuing
+                ? `This is an exploration scene. The Summoner is out at ${locName}${locDesc ? ` - ${locDesc}` : ''}. ${locPop ? `Typically found here: ${locPop}. ` : ''}` +
+                  withSummon + phoneNudge +
+                  `Depict a small, self-contained slice of what unfolds as they explore - an observation, a minor encounter, an atmospheric beat. Keep it grounded and modern; this is not a major plot event.`
+                : `Continue this exploration scene at ${locName}. ${withSummon}${phoneNudge}`;
+        }
         case SkitType.ROLE_ASSIGNMENT:
             return !continuing ?
                 `This scene depicts an exchange between the player and ${actor.name}, following the player's decision to newly assign ${actor.name} to the role of ${skit.context.role || 'something new'} in the ${module?.getAttribute('name') || 'unknown'}. ` +
