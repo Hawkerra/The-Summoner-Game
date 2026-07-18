@@ -323,11 +323,7 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
         this.userId = Object.values(users)[0].anonymizedId;
         this.freshSave = { player: {name: Object.values(users)[0].name, description: Object.values(users)[0].chatProfile || ''}, 
             directorModule: {name: 'Magus\'s Study', roleName: 'Maid'},
-            aide: {
-                name: 'Soji', 
-                description: `Every respectable tower comes haunted, and the Spire is no exception! Your resident tower spirit has been bound to these stones since long before your arrival and knows the Spire's workings intimately, so you don't have to. ` +
-                `Fair warning: two centuries of empty halls have left them a touch capricious - expect teasing, dramatics, and open delight in your confusion, as your suffering is (by their own cheerful admission) the finest entertainment they've had in two hundred years. ` +
-                `Rest assured the binding compels honest service no matter how they grumble, and those who earn their trust report the needling softens into something almost like fondness. They are especially fond of introducing you as the late Magus's magic-order bride or groom.`}, 
+            aide: { name: '', description: '' }, // No tower spirit in the Summoner Game; field retained inert for save-shape compatibility.
             echoes: [], actors: {}, factions: {}, layout: layout, day: 1, turn: 0, currentSkit: undefined, typeOutSpeed: this.DEFAULT_TYPE_OUT_SPEED, reserveActors: [],
             locations: { [HOME_LOCATION_ID]: createHomeLocation(0) }, currentLocationId: HOME_LOCATION_ID, disableTextToSpeech: true };
 
@@ -955,40 +951,47 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
         return this.generateAidePromise;
     }
 
+    /**
+     * On a new game, generate the introductory scene from the player's profile, using the same
+     * loading-screen slot the tower-spirit ("aide") generation used to occupy. No aide/tower spirit
+     * is created any more. The intro establishes WHO THE PLAYER IS and their discovery of the app;
+     * the BEGINNING skit prompt (see Skit.ts) reads the player profile, defaulting to the player's
+     * own home as a neutral starting point when the profile gives no clearer setting.
+     *
+     * Kept the name generateAide / generateAidePromise so MenuScreen and LoadingScreen route through
+     * it unchanged - it now yields an intro skit rather than a steward actor.
+     */
     async generateAide() {
         if (this.generateAidePromise) return this.generateAidePromise;
 
-        let save = this.getSave();
-        if (!save.aide || !save.aide.actorId) {
-            // If aide already exists, do nothing
+        const save = this.getSave();
+        // Only generate an intro for a genuinely fresh game (no scenes have happened yet).
+        const alreadyStarted = (save.timeline && save.timeline.length > 0) || save.currentSkit;
+        if (alreadyStarted) return undefined;
 
-            this.generateAidePromise = (async () => {
-                // Generate a new aide
-                const actorData = {
-                    name: save.aide.name,
-                    fullPath: '',
-                    personality: `The Spire's bound tower spirit and steward: ${save.aide.description}`
-                }
-                // Retry a few times if it fails (or returns null):
-                for (let attempt = 0; attempt < 3; attempt++) {
-                    const aideActor = await loadReserveActor(actorData, this, false);
-                    if (aideActor) {
-                        save = this.getSave();
-                        save.actors[aideActor.id] = aideActor;
-                        aideActor.name = save.aide.name;
-                        aideActor.origin = 'aide';
-                        aideActor.profile = save.aide.description;
-                        save.aide.actorId = aideActor.id;
-                        save.actors[aideActor.id] = aideActor;
-                        await generateBaseActorImage(aideActor, this);
-                        break;
-                    }
-                }
-                this.generateAidePromise = undefined;
-                this.loadReserveActors();
-                this.loadReserveFactions();
-            })();
-        }
+        this.generateAidePromise = (async () => {
+            const introSkit: SkitData = {
+                type: SkitType.BEGINNING,
+                moduleId: HOME_LOCATION_ID,
+                script: [],
+                generating: true,
+                context: {},
+            };
+            this.setSkit(introSkit);
+            try {
+                // Generate the opening script here, during loading, so it's ready when we reach the scene.
+                const entries = await generateSkitScript(introSkit, this);
+                introSkit.script = entries;
+            } catch (e) {
+                console.warn('Intro generation failed; entering the intro scene un-generated.', e);
+            } finally {
+                introSkit.generating = false;
+                this.getSave().currentSkit = introSkit;
+                this.saveGame();
+            }
+            this.generateAidePromise = undefined;
+            this.loadReserveActors();
+        })();
         return this.generateAidePromise;
     }
 

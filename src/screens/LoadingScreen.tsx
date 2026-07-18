@@ -4,8 +4,9 @@ import { ScreenType } from './BaseScreen';
 import { Stage } from '../Stage';
 
 /*
- * Loading screen that displays while the StationAide is being generated.
- * Monitors the generateAidePromise and automatically transitions to the Station screen when complete.
+ * Loading screen shown while the introductory scene is generated from the player's profile
+ * (this occupies the slot the old tower-spirit generation used). Transitions into the intro
+ * skit when generation completes, or to Home if there is no pending scene.
  */
 
 interface LoadingScreenProps {
@@ -14,9 +15,9 @@ interface LoadingScreenProps {
 }
 
 const LOADING_PHASES = [
-    { message: "Generating content (this may take a while)", duration: 15000, progress: 20 },
-    { message: "Expanding Tower Spirit details.", duration: 15000, progress: 50 },
-    { message: "Visualizing Tower Spirit.", duration: 30000, progress: 75 },
+    { message: "Something is installing itself on your phone\u2026", duration: 15000, progress: 20 },
+    { message: "Reading the room\u2026", duration: 15000, progress: 50 },
+    { message: "Setting the scene\u2026", duration: 30000, progress: 75 },
     { message: "Wrapping up", duration: Infinity, progress: 90 },
 ];
 
@@ -24,17 +25,17 @@ export const LoadingScreen: FC<LoadingScreenProps> = ({ stage, setScreenType }) 
     const [currentPhaseIndex, setCurrentPhaseIndex] = useState(0);
     const [progress, setProgress] = useState(0);
 
-    // Poll for completion of aide generation
+    // Poll for completion of intro generation
     useEffect(() => {
         const interval = setInterval(() => {
-            const aidePromise = stage().getGenerateAidePromise();
-            
-            // If aide promise has completed, transition to station screen
-            if (!aidePromise) {
-                setScreenType(ScreenType.STATION);
+            const introPromise = stage().getGenerateAidePromise();
+
+            // Once generation finishes, enter the intro scene (or Home if there's nothing pending).
+            if (!introPromise) {
+                setScreenType(stage().getSave().currentSkit ? ScreenType.SKIT : ScreenType.STATION);
             }
         }, 100);
-        
+
         return () => clearInterval(interval);
     }, [stage, setScreenType]);
 
@@ -100,7 +101,7 @@ export const LoadingScreen: FC<LoadingScreenProps> = ({ stage, setScreenType }) 
                         textAlign: 'center',
                     }}
                 >
-                    Awakening the Tower Spirit
+                    Beginning
                 </Typography>
 
                 <Box sx={{ width: '100%', marginBottom: 2 }}>
