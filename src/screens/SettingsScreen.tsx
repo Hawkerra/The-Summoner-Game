@@ -15,8 +15,8 @@ interface SettingsScreenProps {
 interface SettingsData {
     playerName: string;
     playerDescription: string;
-    directorModuleName: string;
-    directorModuleRoleName: string;
+    cityName: string;
+    worldDetails: string;
     disableTextToSpeech: boolean;
     disableEmotionImages: boolean;
     disableDecorImages: boolean;
@@ -136,8 +136,8 @@ export const SettingsScreen: FC<SettingsScreenProps> = ({ stage, onCancel, onCon
     const [settings, setSettings] = useState<SettingsData>({
         playerName: saveFromStage.player?.name || 'You',
         playerDescription: saveFromStage.player?.description || 'The Spire\'s accidental Magus is the tower\'s sole living authority.',
-        directorModuleName: saveFromStage.directorModule?.name || 'Magus\'s Study',
-        directorModuleRoleName: saveFromStage.directorModule?.roleName || 'Maid',
+        cityName: saveFromStage.cityName || '',
+        worldDetails: saveFromStage.worldDetails || '',
         disableTextToSpeech: saveFromStage.disableTextToSpeech ?? true,
         disableEmotionImages: saveFromStage.disableEmotionImages ?? false,
         disableDecorImages: saveFromStage.disableDecorImages ?? saveFromStage.disableEmotionImages ?? false,
@@ -168,9 +168,8 @@ export const SettingsScreen: FC<SettingsScreenProps> = ({ stage, onCancel, onCon
         const save = stage().getSave();
         save.player.name = settings.playerName;
         save.player.description = settings.playerDescription;
-        save.directorModule = save.directorModule || {};
-        save.directorModule.name = settings.directorModuleName;
-        save.directorModule.roleName = settings.directorModuleRoleName;
+        save.cityName = settings.cityName;
+        save.worldDetails = settings.worldDetails;
 
         // Build bannedTags from toggles (mapped arrays) and write-in tags, deduplicated
         const mappedBans = Object.keys(settings.tagToggles)
@@ -405,11 +404,11 @@ export const SettingsScreen: FC<SettingsScreenProps> = ({ stage, onCancel, onCon
                                 />
                             </div>
 
-                            {/* Magus's Room Name */}
+                            {/* City / Setting Name */}
                             {isNewGame && (
                                 <div>
-                                    <label 
-                                        htmlFor="director-module-name"
+                                    <label
+                                        htmlFor="city-name"
                                         style={{
                                             display: 'block',
                                             color: '#b066ff',
@@ -418,23 +417,23 @@ export const SettingsScreen: FC<SettingsScreenProps> = ({ stage, onCancel, onCon
                                             marginBottom: '8px',
                                         }}
                                     >
-                                        Magus's Room Name
+                                        City / Setting Name (optional)
                                     </label>
                                     <TextInput
-                                        id="director-module-name"
+                                        id="city-name"
                                         fullWidth
-                                        value={settings.directorModuleName}
-                                        onChange={(e) => handleInputChange('directorModuleName', e.target.value)}
-                                        placeholder="Enter Magus's Room Name"
+                                        value={settings.cityName}
+                                        onChange={(e) => handleInputChange('cityName', e.target.value)}
+                                        placeholder="e.g. New Ashford, or leave blank for a generic modern city"
                                         style={{ fontSize: '16px' }}
                                     />
                                 </div>
                             )}
-                            {/* Magus's Room Job Title */}
+                            {/* World Details */}
                             {isNewGame && (
                                 <div>
-                                    <label 
-                                        htmlFor="director-room-role-name"
+                                    <label
+                                        htmlFor="world-details"
                                         style={{
                                             display: 'block',
                                             color: '#b066ff',
@@ -443,15 +442,21 @@ export const SettingsScreen: FC<SettingsScreenProps> = ({ stage, onCancel, onCon
                                             marginBottom: '8px',
                                         }}
                                     >
-                                        Magus's Room Job Title (a resident-assignable role)
+                                        World Details (optional)
                                     </label>
-                                    <TextInput
-                                        id="director-module-role-name"
-                                        fullWidth
-                                        value={settings.directorModuleRoleName}
-                                        onChange={(e) => handleInputChange('directorModuleRoleName', e.target.value)}
-                                        placeholder="Enter Magus's Room Job Title"
-                                        style={{ fontSize: '16px' }}
+                                    <textarea
+                                        id="world-details"
+                                        className="text-input-primary"
+                                        value={settings.worldDetails}
+                                        onChange={(e) => handleInputChange('worldDetails', e.target.value)}
+                                        placeholder="Anything that should shape this world: the tone of the city, notable places or factions, the player's circumstances, how strange things are treated..."
+                                        rows={4}
+                                        style={{
+                                            width: '100%',
+                                            padding: '12px',
+                                            fontSize: '14px',
+                                            resize: 'vertical',
+                                        }}
                                     />
                                 </div>
                             )}

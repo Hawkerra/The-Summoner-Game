@@ -277,22 +277,7 @@ export const MenuScreen: FC<MenuScreenProps> = ({ stage, setScreenType }) => {
                         fontSize: 'clamp(10px, 1.5vw, 12px)',
                     }}
                 >
-                    {stage().isAuthenticated 
-                        ? 'v2026.06.10 - Experimenting with skit-generated characters. Still some issues with Soji.'
-                        : (
-                            <>
-                                This is a private fantasy rework of PARC; for the original, visit:{' '}
-                                <a 
-                                    href="https://chub.ai/characters/JakeH/post-apocalypse-rehabilitation-center-20622f03e7a4" 
-                                    target="_blank" 
-                                    rel="noopener noreferrer"
-                                    style={{ color: 'rgba(176, 102, 255, 0.8)', textDecoration: 'underline' }}
-                                >
-                                    chub.ai
-                                </a>
-                            </>
-                        )
-                    }
+                    The Summoner Game - alpha
                 </motion.div>
             </motion.div>
             </div>

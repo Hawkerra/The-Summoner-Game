@@ -620,6 +620,8 @@ export function buildSkitPrompt(skit: SkitData, stage: Stage, historyLength: num
         `The world is otherwise ordinary and modern; the supernatural does not normally happen here, which makes the app both alarming and intriguing. The summoned people are real, with their own histories, wills, and feelings about being torn from their lives - and no clear way home. ` +
         `${playerName} lives an ordinary modern life on the surface, but is now caught up in the Game Master's game: quiet slice-of-life stretches with their summon(s) at home and around the city, punctuated by dangerous "events" the Game Master sets. The tone touchstones are late-2000s webtoons and manga like Dice and Alice in Borderland - ordinary lives running on hidden, escalating rules. ` +
         `Only one summon is active in the world at a time; the rest wait in a timeless void, unaware of any passage of time until they are called back out.`) +
+        ((save.cityName || save.worldDetails) ? buildPromptSegment('Setting Details',
+            `${save.cityName ? `The game is set in ${save.cityName}. ` : ''}${save.worldDetails || ''}`.trim()) : '') +
         buildPromptSegment('Narrative Tone', save.tone || stage.TONE_MAP['Original']) +
         buildPromptSegment('Tower Stats', save.stationStats ? (
             Object.values(StationStat).map(stat => `  ${stat} (${save.stationStats?.[stat] || 3}): ${STATION_STAT_PROMPTS[stat][getStatRating(save.stationStats?.[stat] || 3)]}`).join('\n')

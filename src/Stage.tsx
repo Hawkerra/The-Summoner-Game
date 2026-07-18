@@ -57,6 +57,8 @@ export type SaveType = {
     activeActorId?: string; // The one summon currently active in the world (Summoner Game: one at a time). Others sit in the void.
     locations?: {[id: string]: GameLocation}; // The location graph (Home is root); replaces the tower grid.
     currentLocationId?: string; // Where the player currently is.
+    cityName?: string; // Optional player-set name for the city/setting the game takes place in.
+    worldDetails?: string; // Optional player-set world/setting details that flavor how the world is handled.
     language?: string;
     tone?: string;
     disableImpersonation?: boolean;
@@ -148,7 +150,6 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
 
     private userId: string;
     private characterId: string;
-    public isAuthenticated: boolean = false;
     
 
 
@@ -295,12 +296,6 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
             chatState
         } = data;
 
-        console.log(characters);
-        // voice_id is in the data but not on the Character type. However, it is the only field in the character data that is irreplicable by other means.
-        // I believe it is the only way to verify that this chat involves the official PARC bot.
-        this.isAuthenticated = Object.values(characters).some((c: any) => c['voice_id'] === '8d387ea3-6918-4628-927a-fe024745bea2');
-        console.log('Authenticated:', this.isAuthenticated);
-
         console.log(chatState);
         this.saves = chatState?.saves || [];
         this.saveSlot = chatState?.lastSaveSlot || 0;
@@ -401,14 +396,15 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
     }
 
     pushMessage(message: string) {
-        if (this.isAuthenticated) {
-            this.messenger.impersonate({
-                speaker_id: this.characterId,
-                is_main: false,
-                parent_id: null,
-                message: message
-            });
-        }
+        // (Formerly gated behind an anti-theft `isAuthenticated` check inherited from PARC, which
+        // suppressed Chub message stats on unauthorized copies. Removed with the original author's
+        // blessing so stats populate normally.)
+        this.messenger.impersonate({
+            speaker_id: this.characterId,
+            is_main: false,
+            parent_id: null,
+            message: message
+        });
     }
 
     /**
@@ -989,11 +985,12 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
                 this.getSave().currentSkit = introSkit;
                 this.saveGame();
             }
+            // Seed three starting locations to travel to right away (backstory-driven, generic fallback).
+            await this.seedStartingLocations();
             this.generateAidePromise = undefined;
             this.loadReserveActors();
         })();
-        return this.generateAidePromise;
-    }
+        return this.generateAidePromise;    }
 
     async loadReserveActorFromFullPath(fullPath: string) {
         console.log('Loading reserve actor from fullPath:', fullPath);
@@ -1157,6 +1154,61 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
         if (!parent.childIds.includes(loc.id)) parent.childIds.push(loc.id);
         this.saveGame();
         return loc;
+    }
+
+    /**
+     * On a new game, seed at least three non-Home locations the player can travel to right away.
+     * These are top-level places out in the world. If the player's profile or world details give
+     * something to work with, they're generated to fit; otherwise three generic modern spots are
+     * drawn from the curated pool. Always yields three, and never blocks the game if generation fails.
+     */
+    async seedStartingLocations(): Promise<void> {
+        const save = this.getSave();
+        const existingNonHome = Object.values(this.getLocations()).filter(l => !l.isHome);
+        if (existingNonHome.length >= 3) return;
+
+        type Spec = { name: string; description: string; population?: string; tags?: string[] };
+        let specs: Spec[] = [];
+
+        const profile = (save.player?.description || '').trim();
+        const world = `${save.cityName ? `City/Setting: ${save.cityName}. ` : ''}${save.worldDetails || ''}`.trim();
+        const hasBackstory = profile.length > 40 || world.length > 0;
+
+        if (hasBackstory) {
+            try {
+                const prompt = `{{messages}}You are generating starting locations for a grounded, modern-day narrative game. ` +
+                    `Based on the player's profile and world details below, invent exactly THREE ordinary real-world places (NOT the player's home) that fit their life and setting - places they plausibly frequent or could wander into. ` +
+                    `Return ONLY three lines, no preamble, each formatted exactly as:\nNAME | one-sentence description | who is typically found there\n\n` +
+                    (world ? `World details: ${world}\n` : '') +
+                    (profile ? `Player profile: ${profile}\n` : '');
+                const text = await this.makeText({ prompt, max_tokens: 220, min_tokens: 20, include_history: false });
+                for (const line of (text || '').split('\n')) {
+                    const parts = line.split('|').map(p => p.trim());
+                    if (parts.length >= 2 && parts[0] && !/^name$/i.test(parts[0])) {
+                        specs.push({ name: parts[0].replace(/^[-*\d.\s]+/, ''), description: parts[1], population: parts[2] || undefined });
+                    }
+                    if (specs.length >= 3) break;
+                }
+            } catch (e) {
+                console.warn('Starting-location generation failed; using generic places.', e);
+            }
+        }
+
+        // Fill any shortfall (or the whole set) from the curated generic pool.
+        if (specs.length < 3) {
+            const pool = [...DISCOVERABLE_PLACES].sort(() => Math.random() - 0.5);
+            for (const p of pool) {
+                if (specs.length >= 3) break;
+                if (!specs.some(s => s.name.toLowerCase() === p.name.toLowerCase())) specs.push(p);
+            }
+        }
+
+        const locations = this.getLocations();
+        for (const spec of specs.slice(0, 3)) {
+            const loc = createLocation({ name: spec.name, description: spec.description, population: spec.population, tags: spec.tags, parentId: null, turn: this.getElapsedTurns() });
+            locations[loc.id] = loc; // top-level: reachable from Home via the "Elsewhere" travel list
+        }
+        this.saveGame();
     }
 
     /** Home never archives; any other location unvisited for ARCHIVE_AFTER_TURNS turns is archived. */
