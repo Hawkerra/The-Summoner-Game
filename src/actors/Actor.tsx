@@ -2,6 +2,7 @@ import { Emotion, EMOTION_PROMPTS, EmotionPack } from "./Emotion";
 import { Module } from "../Module";
 import { SaveType, Stage } from "../Stage";
 import { v4 as generateUuid } from 'uuid';
+import { EquipmentItem, EquipSlot, createTemporaryItem } from '../Equipment';
 import { AspectRatio } from "@chub-ai/stages-ts";
 import { FlashOn, Forum, 
     FitnessCenter, Construction, Lightbulb, 
@@ -83,6 +84,7 @@ class Actor {
     fullPath: string = '';
     locationId: string = ''; // If this is a module ID, the actor is currently present in that module; if it is a faction ID, the actor is temporarily located offstation with that faction
     recoveryUntilTurn?: number; // If set, this summon was defeated and is recovering in the void until this elapsed-turn count; can't be made active until then.
+    equipped: { [slot: string]: EquipmentItem } = {}; // Slot-based equipment: the NARRATIVE source of truth for what they wear/hold. The LLM reads clothing from here, never from outfits.
     factionId: string = ''; // If this actor belongs to a faction, the ID of that faction; '' is the PARC or independent
     avatarImageUrl: string;
     // 'patient' indicates an echo origin, 'faction' indicates a someone generated as a faction representative, 'aide' is the station aide, and 'emergent' is a character generated as a result of narrative activity.
@@ -144,6 +146,7 @@ class Actor {
         if (actor.roleProficiency === undefined) {
             actor.roleProficiency = {};
         }
+        if (!actor.equipped) actor.equipped = {};
         // Backfill any capability stat missing from an older save (e.g. Reflex, added in the
         // rank-spine pass) so stat rows and derived Health never read undefined.
         if (actor.stats) {
@@ -230,6 +233,21 @@ class Actor {
         const brawn = this.stats[Stat.Brawn] ?? HUMAN_AVERAGE;
         const nerve = this.stats[Stat.Nerve] ?? HUMAN_AVERAGE;
         return 20 + brawn * 5 + nerve * 3;
+    }
+
+    /**
+     * Effective capability = base + equipment bonuses (traits and further sources join this sum in
+     * later passes), hard-clamped to the rank cap. Bond stats pass through unmodified - gear can't
+     * buy affection.
+     */
+    getEffectiveStat(stat: Stat): number {
+        const base = this.stats[stat] ?? HUMAN_AVERAGE;
+        if (!isCapabilityStat(stat)) return base;
+        let bonus = 0;
+        for (const item of Object.values(this.equipped || {})) {
+            bonus += item?.bonuses?.[stat] || 0;
+        }
+        return Math.max(1, Math.min(RANK_MAX, base + bonus));
     }
 
     /**
@@ -525,6 +543,11 @@ export async function loadReserveActor(data: any, stage: Stage, includeHistory: 
                 `OUTFIT: A one- to two-word name for the character's current outfit that matches the description.\n` +
                 `PROFILE: A brief summary of the character's key personality traits and behaviors.\n` +
                 `STYLE: A concise description of the character's sense of overall style, mood, interests, or aesthetic, to be applied to the way they decorate their space.\n` +
+                `OUTFIT_HEAD: What they arrive wearing on their head, as \"<item name> | <very brief description>\", or \"None\"\n` +
+                `OUTFIT_TORSO: What they arrive wearing on their torso, same format (this slot should almost never be \"None\")\n` +
+                `OUTFIT_LEGS: What they arrive wearing on their legs, same format\n` +
+                `OUTFIT_FEET: What they arrive wearing on their feet, same format\n` +
+                `OUTFIT_HELD: A single item they arrive holding or carrying, same format, or \"None\" (most people arrive holding nothing)\n` +
                 `NAME: Their simple name\n` +
                 `VOICE: Output the specific voice ID from the Available Voices section that best matches the character's apparent gender (foremost) and personality.\n` +
                 `COLOR: A hex color that reflects the character's theme or mood—use darker or richer colors that will contrast with white text.\n` +
@@ -540,6 +563,11 @@ export async function loadReserveActor(data: any, stage: Stage, includeHistory: 
                 `OUTFIT: Utility Gear\n` +
                 `PROFILE: Jane is confident and determined, with a strong sense of justice. She is quick to anger but also quick to forgive. She is fiercely independent and will do whatever it takes to protect those she cares about.\n` +
                 `STYLE: Practical and no-nonsense, favoring functionality over fashion. Prefers muted colors and simple designs that allow freedom and comfort.\n` +
+                `OUTFIT_HEAD: None\n` +
+                `OUTFIT_TORSO: Gray field jacket | A sturdy, well-worn jacket with too many pockets\n` +
+                `OUTFIT_LEGS: Dark cargo pants | Practical and scuffed at the knees\n` +
+                `OUTFIT_FEET: Combat boots | Broken-in black boots, laced tight\n` +
+                `OUTFIT_HELD: None\n` +
                 `NAME: Jane Doe\n` +
                 `VOICE: 03a438b7-ebfa-4f72-9061-f086d8f1fca6\n` +
                 `COLOR: #333333\n` +
@@ -666,6 +694,23 @@ export async function loadReserveActor(data: any, stage: Stage, includeHistory: 
     } else if (Object.values(newActor.stats).some(value => value < 1 || value > 10)) {
         console.log(`Discarding actor due to out-of-bounds stats: ${newActor.name}`);
         return null;
+    }
+
+    // Starting equipment: parse the OUTFIT_ lines into Temporary items in their slots.
+    // These are the clothes they arrived in - lost on desummon like any Temporary gear (Pass B).
+    const outfitSlots: [string, EquipSlot][] = [
+        ['outfit_head', EquipSlot.HEAD],
+        ['outfit_torso', EquipSlot.TORSO],
+        ['outfit_legs', EquipSlot.LEGS],
+        ['outfit_feet', EquipSlot.FEET],
+        ['outfit_held', EquipSlot.RIGHT_HAND],
+    ];
+    for (const [key, slot] of outfitSlots) {
+        const raw = (parsedData[key] || '').trim();
+        if (!raw || /^none\.?$/i.test(raw)) continue;
+        const [name, desc] = raw.split('|').map((p: string) => p.trim());
+        if (!name) continue;
+        newActor.equipped[slot] = createTemporaryItem(name, desc || '', slot);
     }
 
     return newActor;

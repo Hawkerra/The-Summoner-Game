@@ -1,4 +1,5 @@
 import { FC, useEffect, useRef, useState } from 'react';
+import { EQUIP_SLOTS, describeDurability } from '../Equipment';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Dialog, DialogTitle, DialogContent, DialogActions, CircularProgress } from '@mui/material';
 import { Stage } from '../Stage';
@@ -1099,6 +1100,52 @@ export const ActorDetailScreen: FC<ActorDetailScreenProps> = ({ actor, stage, on
                                                         {scoreToGrade(actor.stats[stat])}
                                                     </div>
                                                 </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </section>
+
+                            {/* Equipment Section (Pass A: read-only slot display) */}
+                            <section>
+                                <h2 style={{
+                                    color: '#b066ff',
+                                    fontSize: '18px',
+                                    fontWeight: 'bold',
+                                    marginBottom: '15px',
+                                    borderBottom: '2px solid rgba(176, 102, 255, 0.3)',
+                                    paddingBottom: '5px'
+                                }}>
+                                    Equipment
+                                </h2>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '20px' }}>
+                                    {EQUIP_SLOTS.map(slot => {
+                                        const item = actor.equipped?.[slot];
+                                        return (
+                                            <div key={slot} style={{
+                                                display: 'flex', alignItems: 'baseline', gap: '10px',
+                                                padding: '8px 10px', borderRadius: '8px',
+                                                background: 'rgba(18,10,32,0.5)',
+                                                border: '1px solid rgba(176,102,255,0.15)',
+                                                opacity: item ? 1 : 0.45,
+                                            }}>
+                                                <span style={{ minWidth: '92px', textTransform: 'capitalize', fontSize: '13px', opacity: 0.7 }}>{slot}</span>
+                                                {item ? (
+                                                    <div style={{ minWidth: 0 }}>
+                                                        <b>{item.name}</b>
+                                                        <span style={{
+                                                            marginLeft: '8px', fontSize: '11px', padding: '1px 7px', borderRadius: '6px',
+                                                            border: `1px solid ${item.kind === 'system' ? '#57e08a' : 'rgba(255,212,83,0.6)'}`,
+                                                            color: item.kind === 'system' ? '#57e08a' : '#ffd453',
+                                                        }}>{item.kind === 'system' ? 'System' : 'Temporary'}</span>
+                                                        <span style={{ marginLeft: '8px', fontSize: '12px', opacity: 0.7 }}>
+                                                            {describeDurability(item)} ({item.durability}/{item.maxDurability})
+                                                        </span>
+                                                        {item.description && <div style={{ fontSize: '12px', opacity: 0.65 }}>{item.description}</div>}
+                                                    </div>
+                                                ) : (
+                                                    <span style={{ fontSize: '13px' }}>&mdash;</span>
+                                                )}
                                             </div>
                                         );
                                     })}

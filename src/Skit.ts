@@ -1,4 +1,5 @@
 import Actor, { getStatDescription, findBestNameMatch, Stat, getRole } from "./actors/Actor";
+import { formatEquipmentLine } from './Equipment';
 import { Emotion, EMOTION_MAPPING } from "./actors/Emotion";
 import { getStatRating, MODULE_TEMPLATES, STATION_STAT_PROMPTS, StationStat } from "./Module";
 import { Stage } from "./Stage";
@@ -688,8 +689,8 @@ export function buildSkitPrompt(skit: SkitData, stage: Stage, historyLength: num
             const currentOutfitId = currentActorOutfitIds[actor.id] || actor.outfitId;
             const currentOutfit = actor.getOutfitById(currentOutfitId);
             const otherOutfits = actor.outfits.filter(o => o.id !== currentOutfitId && o.emotionPack['neutral']);
-            return `  ${actor.name}\n    Current Appearance (${currentOutfit.name}): ${actor.getDescription(currentOutfitId)}\n` +
-                (otherOutfits.length > 0 ? `    Other Appearances: ${otherOutfits.map(o => o.name).join(', ')}\n` : '') +
+            return `  ${actor.name}\n    Description: ${actor.getDescription()}\n` +
+                `    Wearing/holding: ${formatEquipmentLine(actor.equipped)}\n` +
                 `    Profile: ${actor.profile}\n    Character Arc: ${actor.characterArc || 'Undetermined'}\n    Days at the Spire: ${save.day - birthDay}\n` +
                 (roleModule ? `    Role: ${roleModule.getAttribute('role') || 'Resident'} (${actor.heldRoles[roleModule.getAttribute('role') || 'Resident'] || 0} days)\n` : '') +
                 `    Role Description: ${roleModule?.getAttribute('roleDescription') || 'This character has no assigned role at the Spire. They are to focus upon their own needs.'}\n` +
