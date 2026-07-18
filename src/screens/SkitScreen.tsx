@@ -259,6 +259,25 @@ export const SkitScreen: FC<SkitScreenProps> = ({ stage, setScreenType, isVertic
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, [setScreenType, showContentManagement]);
 
+    // Rewind overlay state: pick a section, confirm, discard everything after it.
+    const [showRewind, setShowRewind] = React.useState(false);
+    const [rewindTarget, setRewindTarget] = React.useState<number | null>(null);
+    const [rewinding, setRewinding] = React.useState(false);
+
+    const doRewind = async (index: number) => {
+        if (rewinding) return;
+        setRewinding(true);
+        try {
+            await stage().rewindSkit(index);
+        } finally {
+            setRewinding(false);
+            setShowRewind(false);
+            setRewindTarget(null);
+            const updated = stage().getSave().currentSkit;
+            if (updated) onSkitChange(updated);
+        }
+    };
+
     const outcomesAnimationKey = React.useMemo(() => {
         if (accumulatedOutcomes.length === 0) {
             return 'no-outcomes';
@@ -283,6 +302,75 @@ export const SkitScreen: FC<SkitScreenProps> = ({ stage, setScreenType, isVertic
                 display: 'flex',
                 flexDirection: 'column'
             }}>
+                {/* Rewind: pick a past section, everything after it is discarded and outcomes regenerate */}
+                {skit && skit.script.length > 1 && !skit.generating && !rewinding && (
+                    <button
+                        onClick={() => { setShowRewind(true); setRewindTarget(null); }}
+                        style={{
+                            position: 'absolute', top: 10, left: 12, zIndex: 5,
+                            padding: '4px 10px', borderRadius: 8,
+                            background: 'rgba(176,102,255,0.12)', border: '1px solid rgba(176,102,255,0.5)',
+                            color: '#b066ff', fontWeight: 700, fontSize: '0.8rem', letterSpacing: '0.04em', cursor: 'pointer',
+                        }}
+                    >
+                        &#10226; Rewind
+                    </button>
+                )}
+                {showRewind && skit && (
+                    <div style={{ position: 'absolute', inset: 0, zIndex: 20, background: 'rgba(6,4,12,0.88)', display: 'flex', flexDirection: 'column', padding: 16, boxSizing: 'border-box' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                            <b style={{ letterSpacing: '0.05em' }}>REWIND</b>
+                            <button onClick={() => { setShowRewind(false); setRewindTarget(null); }} style={{ background: 'none', border: 'none', color: 'inherit', fontSize: '1.1rem', cursor: 'pointer' }}>&#10005;</button>
+                        </div>
+                        <div style={{ fontSize: '0.8rem', opacity: 0.7, marginBottom: 10 }}>
+                            Pick the last section to KEEP. Everything after it is deleted, and the scene's outcomes are re-judged from that point.
+                        </div>
+                        <div style={{ flex: 1, overflowY: 'auto' }}>
+                            {skit.script.map((entry, i) => {
+                                const snippet = (entry.message || '').replace(/\s+/g, ' ').trim().slice(0, 90);
+                                const isLast = i === skit.script.length - 1;
+                                const selected = rewindTarget === i;
+                                return (
+                                    <div
+                                        key={i}
+                                        onClick={() => { if (!isLast) setRewindTarget(selected ? null : i); }}
+                                        style={{
+                                            padding: '8px 10px', marginBottom: 6, borderRadius: 8, cursor: isLast ? 'default' : 'pointer',
+                                            background: selected ? 'rgba(176,102,255,0.22)' : 'rgba(18,10,32,0.7)',
+                                            border: `1px solid ${selected ? '#b066ff' : 'rgba(176,102,255,0.2)'}`,
+                                            opacity: isLast ? 0.5 : 1,
+                                        }}
+                                    >
+                                        <span style={{ opacity: 0.55, fontSize: '0.75rem' }}>#{i + 1} {entry.speaker ? `— ${entry.speaker}` : ''}{isLast ? ' (current end)' : ''}</span>
+                                        <div style={{ fontSize: '0.85rem' }}>{snippet}{(entry.message || '').length > 90 ? '…' : ''}</div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                        {rewindTarget !== null && (
+                            <div style={{ display: 'flex', gap: 10, justifyContent: 'center', paddingTop: 10 }}>
+                                <button
+                                    onClick={() => doRewind(rewindTarget)}
+                                    disabled={rewinding}
+                                    style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #ff5a7a', background: 'rgba(255,90,122,0.15)', color: '#ff5a7a', fontWeight: 700, cursor: 'pointer' }}
+                                >
+                                    {rewinding ? 'Rewinding…' : `Discard ${skit.script.length - 1 - rewindTarget} section${skit.script.length - 1 - rewindTarget === 1 ? '' : 's'} after #${rewindTarget + 1}`}
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                )}
+                {/* Locked-in SP bonus badge - once the LLM awards a multiplier it holds for the skit */}
+                {(stage().getSave().currentSkit?.spMultiplier || 1) > 1 && (
+                    <div style={{
+                        position: 'absolute', top: 10, right: 12, zIndex: 5,
+                        padding: '4px 10px', borderRadius: 8,
+                        background: 'rgba(255,212,83,0.15)', border: '1px solid #ffd453',
+                        color: '#ffd453', fontWeight: 700, fontSize: '0.8rem', letterSpacing: '0.04em',
+                    }}>
+                        SP &times;{stage().getSave().currentSkit!.spMultiplier}
+                    </div>
+                )}
                 {/* Top right control buttons */}
                 <div style={{
                     width: '100%',

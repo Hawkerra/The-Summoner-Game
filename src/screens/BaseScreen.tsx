@@ -1,6 +1,7 @@
 import React, { FC } from 'react';
 import { Stage } from '../Stage';
 import { HomeScreen } from './HomeScreen';
+import { ShopScreen } from './ShopScreen';
 import { EchoScreen } from './EchoScreen';
 import { CryoScreen } from './CryoScreen';
 import { MenuScreen } from './MenuScreen';
@@ -23,6 +24,7 @@ export enum ScreenType {
     CRYO = 'cryo',
     APERTURE = 'aperture',
     SKIT = 'skit',
+    SHOP = 'shop',
 }
 
 interface BaseScreenProps {
@@ -63,6 +65,9 @@ const BaseScreenContent: FC<{ stage: () => Stage }> = ({ stage }) => {
             {screenType === ScreenType.LOADING && (
                 // Render loading screen
                 <LoadingScreen stage={stage} setScreenType={setScreenType} />
+            )}
+            {screenType === ScreenType.SHOP && (
+                <ShopScreen stage={stage} setScreenType={setScreenType} isVerticalLayout={isVerticalLayout} />
             )}
             {screenType === ScreenType.STATION && (
                 // Render home screen (Pass 1 stub; becomes the Location view in Pass 4)

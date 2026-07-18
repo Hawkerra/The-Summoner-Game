@@ -59,8 +59,15 @@ export const EchoScreen: FC<EchoScreenProps> = ({ stage, setScreenType }) => {
 		return () => window.removeEventListener('keydown', onKey);
 	}, []);
 
+	const gate = stage().canAcceptSummon();
+
 	const doAccept = () => {
 		if (!candidate || leaving) return;
+		if (!gate.allowed) {
+			// Spring the card back; the banner explains why.
+			animate(x, 0, { type: 'spring', stiffness: 550, damping: 40 });
+			return;
+		}
 		setLeaving('accept');
 		const id = stage().acceptSummon(candidate);
 		animate(x, 700, {
@@ -200,6 +207,13 @@ export const EchoScreen: FC<EchoScreenProps> = ({ stage, setScreenType }) => {
 				)}
 			</div>
 
+			{/* token-gate banner */}
+			{candidate && !gate.allowed && (
+				<div style={{ textAlign: 'center', padding: '0 16px 6px', color: '#ffd453', fontSize: '0.85rem', zIndex: 2 }}>
+					{gate.reason}
+				</div>
+			)}
+
 			{/* action buttons */}
 			<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 28, padding: '14px 0 26px', zIndex: 2 }}>
 				<button
@@ -210,7 +224,7 @@ export const EchoScreen: FC<EchoScreenProps> = ({ stage, setScreenType }) => {
 				>&#10005;</button>
 				<button
 					onClick={doAccept}
-					disabled={!candidate || !!leaving}
+					disabled={!candidate || !!leaving || !gate.allowed}
 					aria-label="Summon"
 					style={{ width: 72, height: 72, borderRadius: '50%', border: '2px solid #57e08a', background: 'rgba(87,224,138,0.14)', color: '#57e08a', fontSize: '1.7rem', cursor: candidate ? 'pointer' : 'default' }}
 				>&#10003;</button>

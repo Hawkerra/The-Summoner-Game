@@ -1,12 +1,12 @@
 import {ReactElement} from "react";
 import {StageBase, StageResponse, InitialData, Message, UpdateBuilder, AspectRatio} from "@chub-ai/stages-ts";
 import {LoadResponse} from "@chub-ai/stages-ts/dist/types/load";
-import Actor, { loadReserveActor, commitActorToEcho, Stat, generateAdditionalActorImages, loadReserveActorFromFullPath, ArtStyle, generateActorDecor, namesMatch, findBestNameMatch, generateBaseActorImage, getRole } from "./actors/Actor";
+import Actor, { loadReserveActor, commitActorToEcho, Stat, CAPABILITY_STATS, RANK_MAX, generateAdditionalActorImages, loadReserveActorFromFullPath, ArtStyle, generateActorDecor, namesMatch, findBestNameMatch, generateBaseActorImage, getRole } from "./actors/Actor";
 import { GameLocation, createHomeLocation, createLocation, HOME_LOCATION_ID, ARCHIVE_AFTER_TURNS, DISCOVERABLE_PLACES } from "./Location";
 import Faction, { generateFactionModule, generateFactionRepresentative, loadReserveFaction } from "./factions/Faction";
 import { DEFAULT_GRID_WIDTH, DEFAULT_GRID_HEIGHT, Layout, MODULE_TEMPLATES, StationStat, createModule, registerFactionModule, ModuleIntrinsic, generateModule, generateModuleImage, Module, registerModule, FLOOR_BUILD_COSTS, MAX_FLOORS } from './Module';
 import { BaseScreen, ScreenType } from "./screens/BaseScreen";
-import { accumulateOutcomes, generateSkitScript, generateSkitSummary, Outcome, ScriptEntry, SkitData, SkitType, updateCharacterArc } from "./Skit";
+import { accumulateOutcomes, generateSkitScript, generateSkitSummary, regenerateOutcomesForEnd, Outcome, ScriptEntry, SkitData, SkitType, updateCharacterArc } from "./Skit";
 import { smartRehydrate } from "./SaveRehydration";
 import { Emotion, EmotionPromptMap, getDefaultEmotionPromptMap } from "./actors/Emotion";
 import { assignActorToRole } from "./utils";
@@ -54,7 +54,13 @@ export type SaveType = {
     attenuation?: string;
     typeOutSpeed?: number;
     reserveActors?: Actor[];
-    activeActorId?: string; // The one summon currently active in the world (Summoner Game: one at a time). Others sit in the void.
+    activeActorId?: string; // Legacy single-active field; migrated into activeActorIds on load.
+    activeActorIds?: string[]; // Summons currently active in the world, up to activeSummonCap. Others sit in the void.
+    activeSummonCap?: number; // How many summons may be active at once (default 1; Multi-Summon Tokens raise it, max 3).
+    sp?: number; // Summoner Points - earned 1 per skit section on skit end (and later from events).
+    aestheticTokens?: number; // Shop: change one physical thing about a summon's appearance, chosen upon use.
+    newSummonTokens?: number; // Shop: required to accept each summon beyond the first.
+    gmPurchases?: { request: string; price: number; remark: string }[]; // Custom items granted by the Game Master via the shop's prompt box.
     locations?: {[id: string]: GameLocation}; // The location graph (Home is root); replaces the tower grid.
     currentLocationId?: string; // Where the player currently is.
     cityName?: string; // Optional player-set name for the city/setting the game takes place in.
@@ -91,7 +97,7 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
     public imageGenerationPromises: {[key: string]: Promise<string>} = {};
     private freshSave: SaveType;
     readonly SAVE_SLOTS = 10;
-    readonly RESERVE_ACTORS = 5;
+    readonly RESERVE_ACTORS = 30; // Deep pre-load so the summon app rarely shows 'waiting for signal'.
     readonly PREGEN_FACTION_COUNT = 3;
     readonly MAX_FACTIONS = 5;
     readonly FETCH_AT_TIME = 10;
@@ -1071,13 +1077,30 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
      * and greeted with an intro skit. Works WITHOUT a ready portrait - the image backfills after.
      * Returns the actorId so the caller can route into the intro skit.
      */
+    /** Whether a new summon can be accepted right now, and why not if it can't. */
+    canAcceptSummon(): { allowed: boolean; reason?: string } {
+        const save = this.getSave();
+        const rosterCount = this.getRosterSummons().length;
+        if (rosterCount >= 1 && (save.newSummonTokens || 0) < 1) {
+            return { allowed: false, reason: 'Requires a New Summon Token (50 SP in the Shop).' };
+        }
+        return { allowed: true };
+    }
+
     acceptSummon(actor: Actor): string {
         const save = this.getSave();
+        const gate = this.canAcceptSummon();
+        if (!gate.allowed) return '';
+        // Each summon beyond the first consumes a New Summon Token.
+        if (this.getRosterSummons().length >= 1) {
+            save.newSummonTokens = (save.newSummonTokens || 0) - 1;
+        }
         save.actors[actor.id] = actor;
         save.reserveActors = (save.reserveActors || []).filter(a => a.id !== actor.id);
-        // First summon (or whenever nothing is active) becomes the active summon.
-        if (!save.activeActorId || !save.actors[save.activeActorId]) {
-            save.activeActorId = actor.id;
+        // Join the actives if there's room under the cap.
+        const activeIds = this.getActiveIds();
+        if (activeIds.length < this.getActiveSummonCap()) {
+            activeIds.push(actor.id);
         }
         // Land the new summon wherever the player currently is.
         actor.locationId = this.getCurrentLocationId();
@@ -1254,15 +1277,40 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
         return Object.values(this.getSave().actors).filter(a => a && a.origin === 'patient');
     }
 
+    /** Self-healing list of active summon ids: migrates the legacy single field, drops invalid ids, trims to cap. */
+    getActiveIds(): string[] {
+        const save = this.getSave();
+        if (!save.activeActorIds) {
+            save.activeActorIds = save.activeActorId ? [save.activeActorId] : [];
+            save.activeActorId = undefined;
+        }
+        save.activeActorIds = save.activeActorIds.filter(id => save.actors[id] && save.actors[id].origin === 'patient');
+        const cap = this.getActiveSummonCap();
+        while (save.activeActorIds.length > cap) {
+            const removed = save.activeActorIds.shift();
+            if (removed && save.actors[removed]) save.actors[removed].locationId = 'cryo';
+        }
+        return save.activeActorIds;
+    }
+
+    getActiveSummonCap(): number {
+        return Math.min(3, Math.max(1, this.getSave().activeSummonCap || 1));
+    }
+
+    getActiveSummons(): Actor[] {
+        const save = this.getSave();
+        return this.getActiveIds().map(id => save.actors[id]).filter(Boolean);
+    }
+
+    /** First active summon (or null) - convenience for single-summon UI paths. */
     getActiveSummon(): Actor | null {
-        const id = this.getSave().activeActorId;
-        return id ? (this.getSave().actors[id] || null) : null;
+        return this.getActiveSummons()[0] || null;
     }
 
     /** Summons currently in the void (stored, unaware, no passage of time). */
     getVoidSummons(): Actor[] {
-        const activeId = this.getSave().activeActorId;
-        return this.getRosterSummons().filter(a => a.id !== activeId);
+        const activeIds = new Set(this.getActiveIds());
+        return this.getRosterSummons().filter(a => !activeIds.has(a.id));
     }
 
     isSummonRecovering(actor: Actor): boolean {
@@ -1276,34 +1324,36 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
     }
 
     /**
-     * Make a summon the active one, pulling the current active back into the void. A summon still
-     * recovering can't be summoned. Returns true on success. The void is timeless: a stored summon
-     * simply steps back out, unaware of any gap.
+     * Bring a summon into the world. If there's room under the active cap, they join the actives;
+     * if the cap is full, the longest-active summon steps back into the void to make room. A summon
+     * still recovering can't be summoned. The void is timeless: a stored summon simply steps back
+     * out, unaware of any gap.
      */
     setActiveSummon(actorId: string): boolean {
         const save = this.getSave();
         const target = save.actors[actorId];
         if (!target || target.origin !== 'patient') return false;
         if (this.isSummonRecovering(target)) return false;
-        // Current active steps into the void.
-        const current = this.getActiveSummon();
-        if (current && current.id !== actorId) {
-            current.locationId = 'cryo';
+        const activeIds = this.getActiveIds();
+        if (activeIds.includes(actorId)) return true;
+        if (activeIds.length >= this.getActiveSummonCap()) {
+            const removed = activeIds.shift();
+            if (removed && save.actors[removed]) save.actors[removed].locationId = 'cryo';
         }
         target.locationId = this.getCurrentLocationId();
         target.recoveryUntilTurn = undefined; // fully recovered by the time it's re-summoned
-        save.activeActorId = actorId;
+        activeIds.push(actorId);
         this.saveGame();
         return true;
     }
 
-    /** Voluntarily send the active summon back into the void, leaving no one active. */
+    /** Voluntarily send a summon back into the void. */
     desummonToVoid(actorId: string): void {
         const save = this.getSave();
         const actor = save.actors[actorId];
         if (!actor) return;
         actor.locationId = 'cryo';
-        if (save.activeActorId === actorId) save.activeActorId = undefined;
+        save.activeActorIds = this.getActiveIds().filter(id => id !== actorId);
         this.saveGame();
     }
 
@@ -1318,7 +1368,7 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
         if (!actor) return;
         actor.locationId = 'cryo';
         actor.recoveryUntilTurn = this.getElapsedTurns() + actor.getRecoveryDuration();
-        if (save.activeActorId === actorId) save.activeActorId = undefined;
+        save.activeActorIds = this.getActiveIds().filter(id => id !== actorId);
         this.saveGame();
     }
 
@@ -1623,6 +1673,35 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
 
     }
 
+    /**
+     * Rewind the current skit to the given section index: the selected section is KEPT, everything
+     * after it is deleted and discarded, and the implied outcomes are regenerated for the new
+     * endpoint. The SP bonus multiplier is reset and re-judged by that regeneration, so a bonus
+     * earned only by discarded content doesn't survive the rewind.
+     */
+    async rewindSkit(index: number): Promise<void> {
+        const save = this.getSave();
+        const skit = save.currentSkit;
+        if (!skit || skit.generating) return;
+        if (index < 0 || index >= skit.script.length - 1) return; // nothing after this point - no-op
+
+        skit.script = skit.script.slice(0, index + 1);
+        skit.currentIndex = index;
+        skit.outcomes = [];            // stale - they described the discarded ending
+        skit.spMultiplier = undefined; // re-earned by the regeneration below if still warranted
+        this.saveGame();
+
+        skit.generating = true;
+        try {
+            await regenerateOutcomesForEnd(skit, this);
+        } catch (e) {
+            console.warn('Outcome regeneration after rewind failed; continuing without implied outcomes.', e);
+        } finally {
+            skit.generating = false;
+            this.saveGame();
+        }
+    }
+
     endSkit(setScreenType: (type: ScreenType) => void) {
         const save = this.getSave();
         if (save.currentSkit) {
@@ -1862,6 +1941,18 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
 
             this.summaryCheck();
 
+            // SP: meaningful interaction pays. 1 SP per section, times any locked-in bonus
+            // multiplier the LLM awarded for significant accomplishments (ratchets up only, 1-4x).
+            const spBase = save.currentSkit.script?.length || 0;
+            const spMult = Math.max(1, Math.min(4, save.currentSkit.spMultiplier || 1));
+            const spEarned = spBase * spMult;
+            if (spEarned > 0) {
+                save.sp = (save.sp || 0) + spEarned;
+                this.pushToTimeline(save, spMult > 1
+                    ? `Earned ${spEarned} SP (${spBase} × ${spMult} bonus).`
+                    : `Earned ${spEarned} SP.`);
+            }
+
             save.currentSkit = undefined;
             this.incTurn(1, setScreenType);
         }
@@ -1910,6 +2001,102 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
             throw new Error('Failed to upload file to storage.');
         }
         return updateResponse.data[0].value;
+    }
+
+    // ---- SP & Shop -----------------------------------------------------------------------------
+
+    getSp(): number { return this.getSave().sp || 0; }
+
+    /** Spend SP if affordable. Returns true on success. */
+    spendSp(amount: number): boolean {
+        const save = this.getSave();
+        if ((save.sp || 0) < amount) return false;
+        save.sp = (save.sp || 0) - amount;
+        this.saveGame();
+        return true;
+    }
+
+    /** Cost to raise a capability stat TO the given rank (2-13). Doubles per letter tier. */
+    static statUpgradeCost(targetRank: number): number {
+        const costs: {[rank: number]: number} = { 2: 5, 3: 10, 4: 10, 5: 20, 6: 20, 7: 20, 8: 40, 9: 40, 10: 40, 11: 80, 12: 160, 13: 320 };
+        return costs[targetRank] ?? 0;
+    }
+
+    /** Buy a +1 upgrade to one of a summon's capability stats. */
+    buyStatUpgrade(actorId: string, stat: Stat): boolean {
+        const save = this.getSave();
+        const actor = save.actors[actorId];
+        if (!actor || !CAPABILITY_STATS.includes(stat)) return false;
+        const current = actor.stats[stat] ?? 3;
+        if (current >= RANK_MAX) return false;
+        const cost = Stage.statUpgradeCost(current + 1);
+        if (!this.spendSp(cost)) return false;
+        actor.stats[stat] = current + 1;
+        this.saveGame();
+        return true;
+    }
+
+    buyAestheticToken(): boolean {
+        if (!this.spendSp(5)) return false;
+        const save = this.getSave();
+        save.aestheticTokens = (save.aestheticTokens || 0) + 1;
+        this.saveGame();
+        return true;
+    }
+
+    buyNewSummonToken(): boolean {
+        if (!this.spendSp(50)) return false;
+        const save = this.getSave();
+        save.newSummonTokens = (save.newSummonTokens || 0) + 1;
+        this.saveGame();
+        return true;
+    }
+
+    buyMultiSummonToken(): boolean {
+        if (this.getActiveSummonCap() >= 3) return false;
+        if (!this.spendSp(100)) return false;
+        const save = this.getSave();
+        save.activeSummonCap = this.getActiveSummonCap() + 1;
+        this.saveGame();
+        return true;
+    }
+
+    /**
+     * The Game Master prices a custom request from the shop's prompt box, based on how useful it
+     * would be in the current situation and how entertaining the GM finds the idea. Returns a price
+     * and an in-character remark, or null if pricing failed.
+     */
+    async priceCustomRequest(request: string): Promise<{ price: number; remark: string } | null> {
+        const save = this.getSave();
+        const activeNames = this.getActiveSummons().map(a => a.name).join(', ') || 'none';
+        const prompt = `{{messages}}You are the mysterious, unseen GAME MASTER of a hidden game in a modern world. ` +
+            `A player (the Summoner) is at your shop and requests: "${request}"\n` +
+            `Assign an SP price by your whims: weigh how USEFUL it is in their current situation and how ENTERTAINING you'd find them having it. ` +
+            `Scale: trivial/cosmetic 5-50; useful mundane items 50-300; minor powers or skills 500-2000; strong powers several thousand; game-breaking power tens of thousands. Amusing requests earn discounts; boring safety earns markups.\n` +
+            `Current situation: the Summoner has ${this.getSp()} SP, ${this.getRosterSummons().length} summon(s) (active: ${activeNames}), at ${this.getCurrentLocation().name}.\n` +
+            `Respond with EXACTLY two lines and nothing else:\nPRICE: <integer>\nREMARK: <one short in-character sentence>`;
+        try {
+            const text = await this.makeText({ prompt, max_tokens: 90, min_tokens: 5, include_history: false });
+            const priceMatch = (text || '').match(/PRICE:\s*([0-9,]+)/i);
+            const remarkMatch = (text || '').match(/REMARK:\s*(.+)/i);
+            if (!priceMatch) return null;
+            const price = parseInt(priceMatch[1].replace(/,/g, ''));
+            if (isNaN(price) || price <= 0) return null;
+            return { price, remark: (remarkMatch?.[1] || '').trim() || 'The Game Master names its price without comment.' };
+        } catch (e) {
+            console.warn('GM pricing failed', e);
+            return null;
+        }
+    }
+
+    /** Complete a priced custom purchase: deduct SP and record the acquisition. */
+    buyCustomRequest(request: string, price: number, remark: string): boolean {
+        if (!this.spendSp(price)) return false;
+        const save = this.getSave();
+        if (!save.gmPurchases) save.gmPurchases = [];
+        save.gmPurchases.push({ request, price, remark });
+        this.saveGame();
+        return true;
     }
 
     pushToTimeline(save: SaveType, description: string, skit: SkitData | null = null) {

@@ -60,7 +60,7 @@ export interface SkitData {
     context: any;
     summary?: string;
     outcomes?: Outcome[]; // Outcomes on the skit are implied results if the skit is ended after the current chunk of script. If the skit is continued or ended before the current final entry, these outcomes are discarded.
-
+    spMultiplier?: number; // Locked-in SP bonus multiplier (1-4), awarded by the LLM for significant accomplishments. Ratchets UP only; once earned it holds for the rest of the skit, however long it runs.
 }
 
 function splitScriptEntriesByLineBreaks(scriptEntries: ScriptEntry[]): ScriptEntry[] {
@@ -604,6 +604,9 @@ export function buildSkitPrompt(skit: SkitData, stage: Stage, historyLength: num
         `Only one summon is active in the world at a time; the rest wait in a timeless void, unaware of any passage of time until they are called back out.`) +
         ((save.cityName || save.worldDetails) ? buildPromptSegment('Setting Details',
             `${save.cityName ? `The game is set in ${save.cityName}. ` : ''}${save.worldDetails || ''}`.trim()) : '') +
+        ((save.gmPurchases?.length) ? buildPromptSegment("Summoner's Acquisitions",
+            `Items and boons the Summoner has purchased from the Game Master's shop; these exist and may come up naturally in scenes: ` +
+            save.gmPurchases.map(p => `"${p.request}"`).join('; ') + '.') : '') +
         buildPromptSegment('Narrative Tone', save.tone || stage.TONE_MAP['Original']) +
         buildPromptSegment('Tower Stats', save.stationStats ? (
             Object.values(StationStat).map(stat => `  ${stat} (${save.stationStats?.[stat] || 3}): ${STATION_STAT_PROMPTS[stat][getStatRating(save.stationStats?.[stat] || 3)]}`).join('\n')
@@ -714,6 +717,14 @@ function buildOutcomeTagRules(exampleActor: string): string {return `\n#Characte
                             `[STATION: Arcanum +2, Comfort +1]\n` +
                             `[STATION: Security -1]\n` +
 
+                            `\n#SP Bonus:#\n` +
+                            `Judge whether the scene so far contains a genuinely significant accomplishment by the Summoner. If - and ONLY if - one is present, output a single bonus tag:\n` +
+                            `[BONUS: 2x] for a notable accomplishment or meaningful milestone (a real problem solved, a relationship breakthrough, a danger cleverly averted).\n` +
+                            `[BONUS: 3x] for a major accomplishment or the resolution of a significant ongoing thread.\n` +
+                            `[BONUS: 4x] is reserved for the seriously significant: the completion of a quest, or the positive resolution of an ongoing storyline.\n` +
+                            `Most scenes warrant NO bonus tag at all - ordinary conversation, routine activity, and partial progress earn nothing; omit the tag entirely in those cases. ` +
+                            `A bonus, once earned, is locked in for the skit: never output a lower bonus than one already present in the script; a higher one may replace it if later events justify it.\n` +
+
                             `\n#Tower Activity:#\n` +
                             `Separately, report on ONE resident of the Spire (or the tower's bound spirit) who did NOT appear in this scene, describing something they got up to elsewhere in the tower this turn. ` +
                             `The subject MUST be either a current resident of the tower itself or the tower's bound spirit - NEVER a visiting faction representative, a member of an outside faction, or anyone away from the Spire. ` +
@@ -818,6 +829,18 @@ function parseOutcomeTag(text: string, stage: Stage, skit: SkitData): Outcome[] 
     const availableActors: Actor[] = Object.values(stage.getSave().actors);
 
     if (!text) return null;
+
+    // SP Bonus multiplier: [BONUS: 2x] (also accepts x2 / bare 2). Ratchets up only, never down,
+    // and locks for the rest of the skit. Written through to the PERSISTENT currentSkit because
+    // outcome analysis runs against a temp copy - the flag must land on the real one.
+    const bonusMatch = /^BONUS:\s*x?\s*([1-4])\s*x?\s*$/i.exec(text);
+    if (bonusMatch) {
+        const mult = Math.max(1, Math.min(4, parseInt(bonusMatch[1])));
+        skit.spMultiplier = Math.max(skit.spMultiplier || 1, mult);
+        const live = stage.getSave().currentSkit;
+        if (live) live.spMultiplier = Math.max(live.spMultiplier || 1, mult);
+        return []; // Recognized and consumed; the effect is the flag itself, no outcome objects.
+    }
 
     // Tower Activity: [ACTIVITY: Name | sentence | STAT +1/-1  OR  "No stat change" (REQUIRED tag)]
     const activityRegex = /ACTIVITY:\s*([^|]+)\|\s*([^|]+?)\s*\|\s*([^\]|]+?)\s*$/i;
@@ -1137,6 +1160,17 @@ function parseOutcomeTagsFromText(text: string, stage: Stage, skit: SkitData): O
     }
 
     return outcomes;
+}
+
+/**
+ * Recompute the skit's implied outcomes for its CURRENT final entry - used after a rewind, where
+ * everything past the selected section was discarded and the old outcomes no longer describe the
+ * scene. Also re-judges the SP bonus: the [BONUS] tag rules run as part of this analysis, so a
+ * multiplier the truncated scene still deserves gets re-locked (via the parse write-through), while
+ * one earned only by discarded content stays gone.
+ */
+export async function regenerateOutcomesForEnd(skit: SkitData, stage: Stage): Promise<void> {
+    skit.outcomes = await generateImpliedOutcomesForCurrentEnd(skit, [], stage);
 }
 
 async function generateImpliedOutcomesForCurrentEnd(skit: SkitData, newEntries: ScriptEntry[], stage: Stage): Promise<Outcome[]> {

@@ -45,8 +45,10 @@ export const CryoScreen: FC<CryoScreenProps> = ({ stage, setScreenType }) => {
 	const [detailActor, setDetailActor] = React.useState<Actor | null>(null);
 	const refresh = () => setRefreshKey(k => k + 1);
 
-	const active = stage().getActiveSummon();
+	const actives = stage().getActiveSummons();
+	const active = actives[0] || null;
 	const voidSummons = stage().getVoidSummons();
+	const cap = stage().getActiveSummonCap();
 
 	React.useEffect(() => {
 		const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setScreenType(ScreenType.STATION); };
@@ -89,20 +91,20 @@ export const CryoScreen: FC<CryoScreenProps> = ({ stage, setScreenType }) => {
 
 			<div style={{ position: 'relative', zIndex: 1, flex: 1, overflowY: 'auto', padding: '4px 16px 24px', maxWidth: 640, width: '100%', margin: '0 auto', boxSizing: 'border-box' }}>
 				{/* Active summon */}
-				<div style={{ fontSize: '0.8rem', opacity: 0.6, margin: '4px 0 8px' }}>IN THE WORLD</div>
-				{active ? (
-					<div style={cardStyle}>
-						<div onClick={() => setDetailActor(active)} style={{ cursor: 'pointer' }}><SummonPortrait actor={active} stage={stage} size={72} /></div>
+				<div style={{ fontSize: '0.8rem', opacity: 0.6, margin: '4px 0 8px' }}>IN THE WORLD ({actives.length}/{cap})</div>
+				{actives.length > 0 ? actives.map(a => (
+					<div style={cardStyle} key={a.id}>
+						<div onClick={() => setDetailActor(a)} style={{ cursor: 'pointer' }}><SummonPortrait actor={a} stage={stage} size={72} /></div>
 						<div style={{ flex: 1, minWidth: 0 }}>
 							<div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
-								<b style={{ color: active.themeColor || '#b066ff' }}>{active.name}</b>
-								<StarRow actor={active} />
+								<b style={{ color: a.themeColor || '#b066ff' }}>{a.name}</b>
+								<StarRow actor={a} />
 							</div>
-							{statChips(active)}
+							{statChips(a)}
 						</div>
-						<Button onClick={() => banish(active)}>To void</Button>
+						<Button onClick={() => banish(a)}>To void</Button>
 					</div>
-				) : (
+				)) : (
 					<div style={{ ...cardStyle, opacity: 0.6, justifyContent: 'center' }}>No summon is active.</div>
 				)}
 

@@ -40,8 +40,8 @@ export const HomeScreen: FC<HomeScreenProps> = ({ stage, setScreenType }) => {
     const elsewhere = Object.values(locations).filter(l => !l.archived && !listedIds.has(l.id));
     const archived = Object.values(locations).filter(l => l.archived);
 
-    const activeId = stage().getSave().activeActorId;
-    const activeSummon = activeId ? stage().getSave().actors[activeId] : null;
+    const activeSummons = stage().getActiveSummons();
+    const activeSummon = activeSummons[0] || null;
 
     const travel = (id: string) => { stage().travelToLocation(id); refresh(); };
 
@@ -107,6 +107,7 @@ export const HomeScreen: FC<HomeScreenProps> = ({ stage, setScreenType }) => {
                     </div>
                     <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
                         <Button onClick={() => setScreenType(ScreenType.ECHO)}>Summon</Button>
+                        <Button onClick={() => setScreenType(ScreenType.SHOP)}>Shop ({stage().getSp()} SP)</Button>
                         <Button onClick={() => setScreenType(ScreenType.CRYO)}>Void</Button>
                         <Button onClick={() => setScreenType(ScreenType.MENU)}>Menu</Button>
                     </div>
@@ -114,16 +115,25 @@ export const HomeScreen: FC<HomeScreenProps> = ({ stage, setScreenType }) => {
 
                 {/* present summon */}
                 <div style={{ flex: 1, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', minHeight: 0 }}>
-                    {activeSummon ? (
-                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, textAlign: 'center' }}>
-                            <div style={{
-                                width: 'min(240px, 60vw)', height: 'min(320px, 46vh)', borderRadius: 16,
-                                backgroundImage: summonPortrait ? `url(${summonPortrait})` : undefined,
-                                background: summonPortrait ? undefined : `linear-gradient(160deg, ${activeSummon.themeColor}55, transparent)`,
-                                backgroundSize: 'cover', backgroundPosition: 'center top',
-                                border: `2px solid ${activeSummon.themeColor || '#b066ff'}`,
-                            }} />
-                            <div style={{ fontWeight: 600, color: activeSummon.themeColor || '#b066ff' }}>{activeSummon.name}</div>
+                    {activeSummons.length > 0 ? (
+                        <div style={{ display: 'flex', gap: 16, alignItems: 'flex-end', justifyContent: 'center', flexWrap: 'wrap' }}>
+                            {activeSummons.map(summon => {
+                                const url = summon.getEmotionImage('neutral', stage());
+                                return (
+                                    <div key={summon.id} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, textAlign: 'center' }}>
+                                        <div style={{
+                                            width: activeSummons.length > 1 ? 'min(170px, 42vw)' : 'min(240px, 60vw)',
+                                            height: activeSummons.length > 1 ? 'min(230px, 34vh)' : 'min(320px, 46vh)',
+                                            borderRadius: 16,
+                                            backgroundImage: url ? `url(${url})` : undefined,
+                                            background: url ? undefined : `linear-gradient(160deg, ${summon.themeColor}55, transparent)`,
+                                            backgroundSize: 'cover', backgroundPosition: 'center top',
+                                            border: `2px solid ${summon.themeColor || '#b066ff'}`,
+                                        }} />
+                                        <div style={{ fontWeight: 600, color: summon.themeColor || '#b066ff' }}>{summon.name}</div>
+                                    </div>
+                                );
+                            })}
                         </div>
                     ) : (
                         <div style={{ opacity: 0.6, marginBottom: 24, textAlign: 'center' }}>
