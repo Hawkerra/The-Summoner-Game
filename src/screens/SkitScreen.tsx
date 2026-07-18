@@ -15,6 +15,7 @@ import ActorCard, { ActorCardSection } from '../components/ActorCard';
 import { ContentManagementScreen } from './ContentManagementScreen';
 import { colors } from './Theme';
 
+import { createPortal } from 'react-dom';
 import {
     Send,
     LastPage,
@@ -22,6 +23,7 @@ import {
     Menu as MenuIcon,
     EditNote,
     Close,
+    Replay,
     Warning,
     VolumeUp,
     VolumeOff
@@ -302,22 +304,8 @@ export const SkitScreen: FC<SkitScreenProps> = ({ stage, setScreenType, isVertic
                 display: 'flex',
                 flexDirection: 'column'
             }}>
-                {/* Rewind: pick a past section, everything after it is discarded and outcomes regenerate */}
-                {skit && skit.script.length > 1 && !skit.generating && !rewinding && (
-                    <button
-                        onClick={() => { setShowRewind(true); setRewindTarget(null); }}
-                        style={{
-                            position: 'absolute', top: 10, left: 12, zIndex: 5,
-                            padding: '4px 10px', borderRadius: 8,
-                            background: 'rgba(176,102,255,0.12)', border: '1px solid rgba(176,102,255,0.5)',
-                            color: '#b066ff', fontWeight: 700, fontSize: '0.8rem', letterSpacing: '0.04em', cursor: 'pointer',
-                        }}
-                    >
-                        &#10226; Rewind
-                    </button>
-                )}
-                {showRewind && skit && (
-                    <div style={{ position: 'absolute', inset: 0, zIndex: 20, background: 'rgba(6,4,12,0.88)', display: 'flex', flexDirection: 'column', padding: 16, boxSizing: 'border-box' }}>
+                {showRewind && skit && createPortal(
+                    <div style={{ position: 'fixed', inset: 0, zIndex: 4000, background: 'rgba(6,4,12,0.92)', display: 'flex', flexDirection: 'column', padding: 16, boxSizing: 'border-box', color: '#fff' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
                             <b style={{ letterSpacing: '0.05em' }}>REWIND</b>
                             <button onClick={() => { setShowRewind(false); setRewindTarget(null); }} style={{ background: 'none', border: 'none', color: 'inherit', fontSize: '1.1rem', cursor: 'pointer' }}>&#10005;</button>
@@ -358,7 +346,8 @@ export const SkitScreen: FC<SkitScreenProps> = ({ stage, setScreenType, isVertic
                                 </button>
                             </div>
                         )}
-                    </div>
+                    </div>,
+                    document.body
                 )}
                 {/* Locked-in SP bonus badge - once the LLM awards a multiplier it holds for the skit */}
                 {(stage().getSave().currentSkit?.spMultiplier || 1) > 1 && (
@@ -380,6 +369,17 @@ export const SkitScreen: FC<SkitScreenProps> = ({ stage, setScreenType, isVertic
                     gap: '0.5rem',
                     zIndex: 10
                 }}>
+                    {skit && skit.script.length > 1 && (
+                        <IconButton
+                            onClick={() => { setShowRewind(true); setRewindTarget(null); }}
+                            onMouseEnter={() => setTooltip('Rewind Scene', Replay)}
+                            onMouseLeave={() => clearTooltip()}
+                            disabled={isLoading || rewinding}
+                            sx={cornerButtonSx}
+                        >
+                            <Replay />
+                        </IconButton>
+                    )}
                     {isTextToSpeechEnabled && (
                         <IconButton
                             onClick={() => setIsAudioEnabled(prev => !prev)}
