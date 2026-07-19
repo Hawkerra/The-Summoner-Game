@@ -55,6 +55,17 @@ export const EchoScreen: FC<EchoScreenProps> = ({ stage, setScreenType }) => {
 		}
 	}, [candidate, loading, refreshKey]);
 
+	// Kick the background trait pass and poll lightly: assignments land async, and without a
+	// re-render the chips would never appear on a card the player is already looking at.
+	React.useEffect(() => {
+		void stage().ensureReserveTraits();
+		const interval = setInterval(() => {
+			void stage().ensureReserveTraits();
+			refresh();
+		}, 2000);
+		return () => clearInterval(interval);
+	}, []);
+
 	React.useEffect(() => {
 		const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setScreenType(ScreenType.STATION); };
 		window.addEventListener('keydown', onKey);

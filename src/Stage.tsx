@@ -1041,17 +1041,20 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
     async ensureReserveTraits(): Promise<void> {
         if (this.ensureTraitsPromise) return this.ensureTraitsPromise;
         this.ensureTraitsPromise = (async () => {
-            try {
-                const pending = (this.getSave().reserveActors || []).filter(a => a && !a.traitsAssigned);
-                for (const actor of pending) {
+            const pending = (this.getSave().reserveActors || []).filter(a => a && !a.traitsAssigned);
+            if (pending.length > 0) console.log(`[traits] reserve pass starting: ${pending.length} candidate(s) pending`);
+            for (const actor of pending) {
+                // Per-actor isolation: one bad candidate must not abort the rest of the walk
+                // (an early throw here would otherwise livelock the pass at that actor forever).
+                try {
                     await assignTraitsToActor(actor, this);
-                    this.saveGame();
+                } catch (e) {
+                    console.warn(`[traits] skipping ${actor?.name || 'unknown'} after error`, e);
+                    if (actor) actor.traitsAssigned = true; // don't retry a poisoned candidate every pass
                 }
-            } catch (e) {
-                console.warn('Reserve trait assignment pass failed', e);
-            } finally {
-                this.ensureTraitsPromise = undefined;
+                this.saveGame();
             }
+            this.ensureTraitsPromise = undefined;
         })();
         return this.ensureTraitsPromise;
     }
