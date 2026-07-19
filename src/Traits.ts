@@ -70,21 +70,37 @@ export async function assignTraitsToActor(actor: any, stage: any): Promise<void>
     if (actor.traitsAssigned) return;
     let picked: TraitDef[] = [];
     try {
-        const prompt = `{{messages}}Choose the defining traits for this character.\n` +
-            `Character: ${actor.name}\nDescription: ${String(actor.description || (actor.getDescription ? actor.getDescription() : '') || '').slice(0, 600)}\nProfile: ${String(actor.profile || '').slice(0, 600)}\n\n` +
-            `Pick EXACTLY 3 to 7 trait names from the catalog below that best capture who this character is. ` +
-            `Copy the names exactly as written; do not invent traits.\n` +
-            `Respond with ONLY one line:\nTRAITS: <comma-separated names>\n\n` +
-            `Catalog: ${traitCatalogNames()}`;
+        // Prompt structure matters here: models attend most to the END of the prompt, so the
+        // catalog goes FIRST and the character goes LAST - otherwise 700 trait names drown the
+        // character and picks come out arbitrary (the Starfire-gets-Hull-Welder problem).
+        const prompt = `{{messages}}You are assigning defining traits to a character in a modern-day summoning game.\n\n` +
+            `Trait Catalog (the ONLY valid choices - copy names exactly, do not invent):\n${traitCatalogNames()}\n\n` +
+            `Now, the character:\n` +
+            `Name: ${actor.name}\n` +
+            `Description: ${String(actor.description || (actor.getDescription ? actor.getDescription() : '') || '').slice(0, 1500)}\n` +
+            `Profile: ${String(actor.profile || '').slice(0, 1500)}\n\n` +
+            `IMPORTANT: If you recognize ${actor.name} as an established character from fiction or media ` +
+            `(anime, games, comics, cartoons, books), draw on EVERYTHING you know about them from their ` +
+            `source material - personality, abilities, relationships, appetites - not just the text above. ` +
+            `Your knowledge of the character outranks the excerpt.\n\n` +
+            `Choose the 3 to 7 catalog traits that BEST capture who ${actor.name} specifically is - their ` +
+            `defining personality, notable capabilities, and where the character genuinely supports it, their ` +
+            `romantic/lust-oriented side (do not shy away from those traits when they fit). Fit beats variety: ` +
+            `every pick should make someone who knows this character nod. If few traits truly fit, pick fewer.\n\n` +
+            `Respond with EXACTLY two lines:\n` +
+            `ANALYSIS: <one sentence on who this character is>\n` +
+            `TRAITS: <3-7 comma-separated catalog names>`;
         // Race the LLM call against a timeout: a hung generation must NOT freeze the whole
         // reserve pass (its dedup guard would then block every future kick - zero traits forever).
         const text = await Promise.race([
-            stage.makeText({ prompt, max_tokens: 120, min_tokens: 3, include_history: false }),
+            stage.makeText({ prompt, max_tokens: 300, min_tokens: 3, include_history: false }),
             new Promise<string>((_, reject) => setTimeout(() => reject(new Error('trait call timeout (45s)')), 45_000)),
         ]);
         console.log(`[traits] raw response for ${actor.name}:`, (text || '').slice(0, 200));
         const m = (text || '').match(/TRAITS:\s*(.+)/i);
-        picked = resolveTraits((m ? m[1] : text || '').split(',').map((t: string) => t.trim()).filter(Boolean));
+        // Only fall back to whole-text parsing when no TRAITS: line exists at all - the ANALYSIS
+        // line must never be mined for accidental catalog-name matches.
+        picked = resolveTraits((m ? m[1] : (text || '').replace(/ANALYSIS:.*$/im, '')).split(',').map((t: string) => t.trim()).filter(Boolean));
     } catch (e) {
         console.warn(`[traits] LLM assignment failed for ${actor.name}; padding from commons.`, e);
     }
