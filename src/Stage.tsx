@@ -4,6 +4,7 @@ import {LoadResponse} from "@chub-ai/stages-ts/dist/types/load";
 import Actor, { loadReserveActor, commitActorToEcho, Stat, CAPABILITY_STATS, RANK_MAX, generateAdditionalActorImages, loadReserveActorFromFullPath, ArtStyle, generateActorDecor, namesMatch, findBestNameMatch, generateBaseActorImage, getRole } from "./actors/Actor";
 import { GameLocation, createHomeLocation, createLocation, HOME_LOCATION_ID, ARCHIVE_AFTER_TURNS, DISCOVERABLE_PLACES } from "./Location";
 import { EquipmentItem, EquipSlot, EQUIP_SLOTS, SYSTEM_MAX_DURABILITY, createTemporaryItem, archiveEquipmentItem, findArchiveMatch } from "./Equipment";
+import { assignTraitsToActor } from "./Traits";
 import Faction, { generateFactionModule, generateFactionRepresentative, loadReserveFaction } from "./factions/Faction";
 import { DEFAULT_GRID_WIDTH, DEFAULT_GRID_HEIGHT, Layout, MODULE_TEMPLATES, StationStat, createModule, registerFactionModule, ModuleIntrinsic, generateModule, generateModuleImage, Module, registerModule, FLOOR_BUILD_COSTS, MAX_FLOORS } from './Module';
 import { BaseScreen, ScreenType } from "./screens/BaseScreen";
@@ -1022,15 +1023,44 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
         })();
 
         this.reserveActorsLoadPromise?.then(() => {
+            void this.ensureReserveTraits();
             this.reserveActorsLoadPromise = undefined;
         });
 
         return this.reserveActorsLoadPromise;
     }
 
+    private searchCooldownUntil: number = 0; // Backoff after a failed/rate-limited character search - the UI re-triggers fills aggressively when the pool is empty, so without this a 429 becomes a hammering loop.
+    private ensureTraitsPromise?: Promise<void>;
+
+    /**
+     * Second-pass trait assignment over the reserve: walks candidates one at a time (sequential,
+     * deduped) and assigns 3-7 traits to any who lack them. Runs after fills and can be kicked any
+     * time; cheap no-op when everyone is traited.
+     */
+    async ensureReserveTraits(): Promise<void> {
+        if (this.ensureTraitsPromise) return this.ensureTraitsPromise;
+        this.ensureTraitsPromise = (async () => {
+            try {
+                const pending = (this.getSave().reserveActors || []).filter(a => a && !a.traitsAssigned);
+                for (const actor of pending) {
+                    await assignTraitsToActor(actor, this);
+                    this.saveGame();
+                }
+            } catch (e) {
+                console.warn('Reserve trait assignment pass failed', e);
+            } finally {
+                this.ensureTraitsPromise = undefined;
+            }
+        })();
+        return this.ensureTraitsPromise;
+    }
+
     async loadReserveActors() {
         // If a load is already in-flight, return the existing promise to dedupe concurrent calls
         if (this.reserveActorsLoadPromise) return this.reserveActorsLoadPromise;
+        // Respect the cooldown: return quietly instead of hammering a rate-limited endpoint.
+        if (Date.now() < this.searchCooldownUntil) return;
 
         this.reserveActorsLoadPromise = (async () => {
             try {
@@ -1043,6 +1073,13 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
                         .replace('{{PAGE_NUMBER}}', this.actorPageNumber.toString())
                         .replace('{{EXCLUSIONS}}', exclusions ? exclusions + '%2C' : '')
                         .replace('{{SEARCH_TAGS}}', this.actorTags.concat(this.actorTags).join('%2C')));
+                    if (!response.ok) {
+                        // Rate-limited (429) or otherwise failing: back off for 30s rather than
+                        // parsing an HTML error page as JSON and churning the loop.
+                        console.warn(`Character search returned ${response.status}; backing off for 30s.`);
+                        this.searchCooldownUntil = Date.now() + 30_000;
+                        break;
+                    }
                     const searchResults = await response.json();
                     console.log(searchResults);
                     // Need to do a secondary lookup for each character in searchResults, to get the details we actually care about:
@@ -1101,6 +1138,10 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
         }
         save.actors[actor.id] = actor;
         save.reserveActors = (save.reserveActors || []).filter(a => a.id !== actor.id);
+        // Backfill: a fast swipe can accept a candidate before the reserve trait pass reached them.
+        if (!actor.traitsAssigned) {
+            void assignTraitsToActor(actor, this).then(() => this.saveGame());
+        }
         // Join the actives if there's room under the cap.
         const activeIds = this.getActiveIds();
         if (activeIds.length < this.getActiveSummonCap()) {

@@ -58,3 +58,44 @@ export function resolveTraits(names: string[]): TraitDef[] {
 export function traitCatalogNames(): string {
     return TRAIT_CATALOG.map(t => t.n).join(', ');
 }
+
+/**
+ * Second-pass trait assignment: runs on a candidate while they wait in the reserve (or as a
+ * backfill on accept). A small dedicated LLM call - the 700-name catalog rides THIS call, not the
+ * big distillation. Guarantees 3-7 traits: unknown names are dropped, and a shortfall below 3 is
+ * padded from the common-rarity pool so no card ships traitless. Bond baseline shifts (who they
+ * are on arrival) apply exactly once, guarded by actor.traitsAssigned.
+ */
+export async function assignTraitsToActor(actor: any, stage: any): Promise<void> {
+    if (actor.traitsAssigned) return;
+    let picked: TraitDef[] = [];
+    try {
+        const prompt = `{{messages}}Choose the defining traits for this character.\n` +
+            `Character: ${actor.name}\nDescription: ${(actor.getDescription?.() || '').slice(0, 600)}\nProfile: ${(actor.profile || '').slice(0, 600)}\n\n` +
+            `Pick EXACTLY 3 to 7 trait names from the catalog below that best capture who this character is. ` +
+            `Copy the names exactly as written; do not invent traits.\n` +
+            `Respond with ONLY one line:\nTRAITS: <comma-separated names>\n\n` +
+            `Catalog: ${traitCatalogNames()}`;
+        const text = await stage.makeText({ prompt, max_tokens: 120, min_tokens: 3, include_history: false });
+        const m = (text || '').match(/TRAITS:\s*(.+)/i);
+        picked = resolveTraits((m ? m[1] : text || '').split(',').map((t: string) => t.trim()).filter(Boolean));
+    } catch (e) {
+        console.warn('Trait assignment call failed; padding from commons.', e);
+    }
+    // Guarantee the floor of 3: pad with random common traits (flagged compromise - a traitless
+    // card is worse than a card with a couple of mild, generic commons).
+    if (picked.length < 3) {
+        const commons = TRAIT_CATALOG.filter(t => t.r === 'common' && !picked.some(p => p.n === t.n));
+        while (picked.length < 3 && commons.length > 0) {
+            picked.push(commons.splice(Math.floor(Math.random() * commons.length), 1)[0]);
+        }
+    }
+    actor.traits = picked.map(t => t.n);
+    // Bond baseline shifts: applied once, clamped to the human band.
+    for (const trait of picked) {
+        for (const [stat, amt] of Object.entries(trait.b || {})) {
+            actor.stats[stat] = Math.max(1, Math.min(7, (actor.stats[stat] ?? 3) + (amt as number)));
+        }
+    }
+    actor.traitsAssigned = true;
+}

@@ -3,7 +3,7 @@ import { Module } from "../Module";
 import { SaveType, Stage } from "../Stage";
 import { v4 as generateUuid } from 'uuid';
 import { EquipmentItem, EquipSlot, createTemporaryItem, isNoneish } from '../Equipment';
-import { TraitDef, getTraitByName, resolveTraits, traitCatalogNames, HEALTH_PER_TRAIT_POINT } from '../Traits';
+import { TraitDef, getTraitByName, HEALTH_PER_TRAIT_POINT } from '../Traits';
 import { AspectRatio } from "@chub-ai/stages-ts";
 import { FlashOn, Forum, 
     FitnessCenter, Construction, Lightbulb, 
@@ -87,7 +87,8 @@ class Actor {
     recoveryUntilTurn?: number; // If set, this summon was defeated and is recovering in the void until this elapsed-turn count; can't be made active until then.
     equipped: { [slot: string]: EquipmentItem } = {}; // Slot-based equipment: the NARRATIVE source of truth for what they wear/hold. The LLM reads clothing from here, never from outfits.
     purchasedPowers?: string[]; // Powers/skills bought from the Game Master for this summon.
-    traits: string[] = []; // 3-7 trait names from the catalog, assigned at distillation. The sole route past rank 7.
+    traits: string[] = []; // 3-7 trait names from the catalog. Assigned by a second pass while in the reserve. The sole route past rank 7.
+    traitsAssigned?: boolean; // True once the trait-assignment step has run (guards bond baseline shifts from double-applying).
     factionId: string = ''; // If this actor belongs to a faction, the ID of that faction; '' is the PARC or independent
     avatarImageUrl: string;
     // 'patient' indicates an echo origin, 'faction' indicates a someone generated as a faction representative, 'aide' is the station aide, and 'emergent' is a character generated as a result of narrative activity.
@@ -563,7 +564,6 @@ export async function loadReserveActor(data: any, stage: Stage, includeHistory: 
                 `OUTFIT_FEET: What they arrive wearing on their feet, same format\n` +
                 `OUTFIT_HELD: A single item they arrive holding or carrying, same format, or \"None\" (most people arrive holding nothing)\n` +
                 `OUTFIT_UNDERWEAR: What they arrive wearing as undergarments, same format, or \"None\"\n` +
-                `TRAITS: 3-7 comma-separated trait names capturing this character's defining qualities, chosen ONLY from the Trait Catalog provided below - copy names exactly; do not invent traits\n` +
                 `NAME: Their simple name\n` +
                 `VOICE: Output the specific voice ID from the Available Voices section that best matches the character's apparent gender (foremost) and personality.\n` +
                 `COLOR: A hex color that reflects the character's theme or mood—use darker or richer colors that will contrast with white text.\n` +
@@ -585,7 +585,6 @@ export async function loadReserveActor(data: any, stage: Stage, includeHistory: 
                 `OUTFIT_FEET: Combat boots | Broken-in black boots, laced tight\n` +
                 `OUTFIT_HELD: None\n` +
                 `OUTFIT_UNDERWEAR: Plain cotton set | Simple, practical underwear\n` +
-                `TRAITS: Survivor, Steady Hands, Protective Instinct, Night Owl\n` +
                 `NAME: Jane Doe\n` +
                 `VOICE: 03a438b7-ebfa-4f72-9061-f086d8f1fca6\n` +
                 `COLOR: #333333\n` +
@@ -602,8 +601,7 @@ export async function loadReserveActor(data: any, stage: Stage, includeHistory: 
                 `#END#`) +
             (stage.getSave().attenuation ? 
                 buildPromptSegment(`Attenuation`, 
-                    `Trait Catalog (choose TRAITS only from these names): ${traitCatalogNames()}\n\n` +
-            `The app's summoning parameters are currently attuned to shape the resulting summon; take the following additional context into account while forming this distillation:\n${stage.getSave().attenuation}`) : 
+                    `The app's summoning parameters are currently attuned to shape the resulting summon; take the following additional context into account while forming this distillation:\n${stage.getSave().attenuation}`) : 
                 '')),
         stop: ['#END'],
         include_history: true, // There won't be any history, but if this is true, the front-end doesn't automatically apply pre-/post-history prompts.
@@ -734,17 +732,9 @@ export async function loadReserveActor(data: any, stage: Stage, includeHistory: 
         newActor.equipped[slot] = createTemporaryItem(name, desc || '', slot);
     }
 
-    // Traits: resolve the LLM's picks against the catalog (unknowns dropped, max 7), then apply
-    // bond BASELINE shifts once - who they are on arrival, clamped to the human band. Capability
-    // and Health modifiers are NOT baked into base; they act through getEffectiveStat/getMaxHealth.
-    const traitDefs = resolveTraits((parsedData['traits'] || '').split(',').map((t: string) => t.trim()).filter(Boolean));
-    newActor.traits = traitDefs.map(t => t.n);
-    for (const trait of traitDefs) {
-        for (const [stat, amt] of Object.entries(trait.b || {})) {
-            newActor.stats[stat as Stat] = Math.max(1, Math.min(7, (newActor.stats[stat as Stat] ?? HUMAN_AVERAGE) + amt));
-        }
-    }
-
+    // Traits are assigned in a SECOND step while the candidate waits in the reserve
+    // (see assignTraitsToActor in Traits.ts) - keeping this distillation response short and
+    // reliable. traits stays [] until that step runs.
     return newActor;
 }
 
