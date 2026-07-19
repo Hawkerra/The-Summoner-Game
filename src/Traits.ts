@@ -73,7 +73,11 @@ export async function assignTraitsToActor(actor: any, stage: any): Promise<void>
         // Prompt structure matters here: models attend most to the END of the prompt, so the
         // catalog goes FIRST and the character goes LAST - otherwise 700 trait names drown the
         // character and picks come out arbitrary (the Starfire-gets-Hull-Welder problem).
-        const prompt = `{{messages}}You are assigning defining traits to a character in a modern-day summoning game.\n\n` +
+        // NO {{messages}} here: that token expands into the live chat/scene history, and the model
+        // was bleeding scene content into trait picks (e.g. assigning a character telekinesis because
+        // an unrelated telekinetic appeared in the loaded context). Traits must be judged from the
+        // character's own card ALONE, context-free.
+        const prompt = `You are assigning defining traits to a character in a modern-day summoning game.\n\n` +
             `Trait Catalog (the ONLY valid choices - copy names exactly, do not invent):\n${traitCatalogNames()}\n\n` +
             `Now, the character:\n` +
             `Name: ${actor.name}\n` +

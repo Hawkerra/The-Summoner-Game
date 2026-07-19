@@ -535,7 +535,7 @@ export async function loadReserveActor(data: any, stage: Stage, includeHistory: 
 
     // Take this data and use text generation to get an updated distillation of this character, including a physical description.
     const generatedResponse = await stage.makeText({
-        prompt: `{{messages}}This is preparatory request for structured and formatted game content.` +
+        prompt: `This is preparatory request for structured and formatted game content.` +
             buildPromptSegment(`Background`, `This game is set in the ordinary modern world. A strange smartphone app summons real people out of their own lives and worlds and binds them to the player. ` +
                 `The player, ${stage.getSave().player.name}, is the Summoner: an otherwise-ordinary modern person caught up in a hidden game run by an unseen Game Master, who now has these summoned people bound to them. ` +
                 `The Summoner's motives and ethics are open-ended; they may be benevolent or self-serving, and the people they summon may respond accordingly. `) +
