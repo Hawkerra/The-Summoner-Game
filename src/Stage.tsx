@@ -102,7 +102,7 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
     public imageGenerationPromises: {[key: string]: Promise<string>} = {};
     private freshSave: SaveType;
     readonly SAVE_SLOTS = 10;
-    readonly RESERVE_ACTORS = 30; // Deep pre-load so the summon app rarely shows 'waiting for signal'.
+    readonly RESERVE_ACTORS = 15; // Pre-load depth. Trimmed from 30: still deep enough to avoid 'waiting for signal', shallow enough to stay under Chub's rate limits.
     readonly PREGEN_FACTION_COUNT = 3;
     readonly MAX_FACTIONS = 5;
     readonly FETCH_AT_TIME = 10;
@@ -1012,6 +1012,7 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
                 console.log('Loading targeted reserve actor...');
                 const newActor = await loadReserveActorFromFullPath(fullPath, this);
                 if (newActor !== null) {
+                    await assignTraitsToActor(newActor, this);
                     this.getSave().reserveActors = [...(this.getSave().reserveActors || []), newActor];
                     this.saveGame();
                 } else {
@@ -1023,7 +1024,6 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
         })();
 
         this.reserveActorsLoadPromise?.then(() => {
-            void this.ensureReserveTraits();
             this.reserveActorsLoadPromise = undefined;
         });
 
@@ -1060,6 +1060,9 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
     }
 
     async loadReserveActors() {
+        // Backfill guard: assign traits to any untraited candidates ALREADY in the pool (from
+        // builds before the per-candidate pipeline). Deduped internally; no-op when all traited.
+        void this.ensureReserveTraits();
         // If a load is already in-flight, return the existing promise to dedupe concurrent calls
         if (this.reserveActorsLoadPromise) return this.reserveActorsLoadPromise;
         // Respect the cooldown: return quietly instead of hammering a rate-limited endpoint.
@@ -1096,7 +1099,13 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
                     console.log(basicCharacterData);
 
                     const newActors: Actor[] = await Promise.all(basicCharacterData.map(async (fullPath: string) => {
-                        return loadReserveActorFromFullPath(fullPath, this);
+                        const actor = await loadReserveActorFromFullPath(fullPath, this);
+                        if (actor) {
+                            // Per-candidate pipeline: BOTH passes (distill, then traits) complete
+                            // before the card joins the pool - no separate kick to go missing.
+                            await assignTraitsToActor(actor, this);
+                        }
+                        return actor;
                     }));
 
                     this.getSave().reserveActors = [...this.getSave().reserveActors || [], ...newActors.filter(a => a !== null)];
