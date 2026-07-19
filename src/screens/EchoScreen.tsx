@@ -13,6 +13,7 @@ import { ScreenType } from './BaseScreen';
 import { Stage } from '../Stage';
 import Actor, { Stat, ACTOR_STAT_ICONS, CAPABILITY_STATS, isCapabilityStat } from '../actors/Actor';
 import { scoreToGrade } from '../utils';
+import { TRAIT_RARITY_COLORS } from '../Traits';
 import { BlurredBackground } from '../components/BlurredBackground';
 import { Button } from '../components/UIComponents';
 import { ActorDetailScreen } from './ActorDetailScreen';
@@ -29,6 +30,7 @@ export const EchoScreen: FC<EchoScreenProps> = ({ stage, setScreenType }) => {
 	const [refreshKey, setRefreshKey] = React.useState(0);
 	const [loading, setLoading] = React.useState(false);
 	const [showDetail, setShowDetail] = React.useState(false);
+	const [showTraits, setShowTraits] = React.useState(false);
 	const [leaving, setLeaving] = React.useState<null | 'accept' | 'reject'>(null);
 
 	const candidates = stage().getSave().reserveActors || [];
@@ -170,7 +172,7 @@ export const EchoScreen: FC<EchoScreenProps> = ({ stage, setScreenType }) => {
 							{/* info */}
 							<div style={{ flex: 1, padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 8, background: 'linear-gradient(to bottom, #120a20, #0b0712)' }}>
 								<div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 }}>
-									<span style={{ fontSize: '1.15rem', fontWeight: 700, color: themeColor, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{candidate.name}</span>
+									<span style={{ fontSize: '1.05rem', fontWeight: 800, color: '#fff', background: themeColor, padding: '3px 12px', borderRadius: 999, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textShadow: '0 1px 2px rgba(0,0,0,0.45)' }}>{candidate.name}</span>
 									<span style={{ color: '#ffd453', letterSpacing: 1, flexShrink: 0 }} title={`${candidate.getStarRating()} stars`}>
 										{'\u2605'.repeat(candidate.getStarRating())}{'\u2606'.repeat(5 - candidate.getStarRating())}
 									</span>
@@ -183,12 +185,47 @@ export const EchoScreen: FC<EchoScreenProps> = ({ stage, setScreenType }) => {
 										return (
 											<div key={stat} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.8rem' }}>
 												{Icon && <Icon style={{ fontSize: '0.95rem', opacity: 0.75 }} />}
-												<span style={{ fontWeight: 700 }}>{scoreToGrade(candidate.stats[stat])}</span>
+												<span style={{ fontWeight: 700 }}>{scoreToGrade(candidate.getEffectiveStat(stat))}</span>
 											</div>
 										);
 									})}
 								</div>
 
+								{/* Traits: stripped-down chips, color-coded by rarity; hover/tap for descriptions (no stat numbers - those are already baked into the grades above) */}
+								{(candidate.traits?.length || 0) > 0 && (
+									<div
+										style={{ position: 'relative', marginTop: 8 }}
+										onMouseEnter={() => setShowTraits(true)}
+										onMouseLeave={() => setShowTraits(false)}
+										onClick={(e) => { e.stopPropagation(); setShowTraits(v => !v); }}
+									>
+										<div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, justifyContent: 'center' }}>
+											{candidate.getTraitDefs().map(t => (
+												<span key={t.n} style={{
+													fontSize: '0.66rem', fontWeight: 700, padding: '2px 8px', borderRadius: 999,
+													color: TRAIT_RARITY_COLORS[t.r] || '#b8c0cc',
+													border: `1px solid ${TRAIT_RARITY_COLORS[t.r] || '#b8c0cc'}66`,
+													background: 'rgba(11,7,18,0.6)',
+												}}>{t.n}</span>
+											))}
+										</div>
+										{showTraits && (
+											<div style={{
+												position: 'absolute', bottom: '100%', left: '50%', transform: 'translateX(-50%)',
+												width: 'min(300px, 76vw)', marginBottom: 6, padding: '8px 10px', borderRadius: 10,
+												background: 'rgba(11,7,18,0.96)', border: '1px solid rgba(176,102,255,0.35)',
+												fontSize: '0.68rem', lineHeight: 1.45, zIndex: 4, textAlign: 'left',
+												boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
+											}}>
+												{candidate.getTraitDefs().map(t => (
+													<div key={t.n}>
+														<b style={{ color: TRAIT_RARITY_COLORS[t.r] || '#b8c0cc' }}>{t.n}:</b> {t.d}
+													</div>
+												))}
+											</div>
+										)}
+									</div>
+								)}
 								<div style={{ marginTop: 'auto', textAlign: 'center', fontSize: '0.7rem', opacity: 0.4 }}>swipe to choose</div>
 							</div>
 						</div>

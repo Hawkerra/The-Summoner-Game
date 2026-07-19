@@ -1,5 +1,6 @@
 import { FC, useEffect, useRef, useState } from 'react';
 import { EQUIP_SLOTS, describeDurability } from '../Equipment';
+import { TRAIT_RARITY_COLORS } from '../Traits';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Dialog, DialogTitle, DialogContent, DialogActions, CircularProgress } from '@mui/material';
 import { Stage } from '../Stage';
@@ -1105,6 +1106,26 @@ export const ActorDetailScreen: FC<ActorDetailScreenProps> = ({ actor, stage, on
                                     })}
                                 </div>
                             </section>
+
+                            {/* Traits Section */}
+                            {(actor.traits?.length || 0) > 0 && (
+                                <section>
+                                    <h2 style={{
+                                        color: '#b066ff', fontSize: '18px', fontWeight: 'bold', marginBottom: '15px',
+                                        borderBottom: '2px solid rgba(176, 102, 255, 0.3)', paddingBottom: '5px'
+                                    }}>
+                                        Traits
+                                    </h2>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '20px' }}>
+                                        {actor.getTraitDefs().map(t => (
+                                            <div key={t.n} style={{ fontSize: '13px' }}>
+                                                <b style={{ color: TRAIT_RARITY_COLORS[t.r] || '#b8c0cc' }}>{t.n}</b>
+                                                <span style={{ opacity: 0.75, marginLeft: 8 }}>{t.d}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </section>
+                            )}
 
                             {/* Equipment Section (Pass A: read-only slot display) */}
                             <section>

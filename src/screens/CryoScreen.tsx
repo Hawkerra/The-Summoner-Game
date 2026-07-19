@@ -67,7 +67,7 @@ export const CryoScreen: FC<CryoScreenProps> = ({ stage, setScreenType }) => {
 				return (
 					<span key={stat} style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
 						{Icon && <Icon style={{ fontSize: '0.8rem', opacity: 0.7 }} />}
-						<b>{scoreToGrade(actor.stats[stat])}</b>
+						<b>{scoreToGrade(actor.getEffectiveStat(stat))}</b>
 					</span>
 				);
 			})}

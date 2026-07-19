@@ -3,6 +3,7 @@ import { Module } from "../Module";
 import { SaveType, Stage } from "../Stage";
 import { v4 as generateUuid } from 'uuid';
 import { EquipmentItem, EquipSlot, createTemporaryItem, isNoneish } from '../Equipment';
+import { TraitDef, getTraitByName, resolveTraits, traitCatalogNames, HEALTH_PER_TRAIT_POINT } from '../Traits';
 import { AspectRatio } from "@chub-ai/stages-ts";
 import { FlashOn, Forum, 
     FitnessCenter, Construction, Lightbulb, 
@@ -85,7 +86,8 @@ class Actor {
     locationId: string = ''; // If this is a module ID, the actor is currently present in that module; if it is a faction ID, the actor is temporarily located offstation with that faction
     recoveryUntilTurn?: number; // If set, this summon was defeated and is recovering in the void until this elapsed-turn count; can't be made active until then.
     equipped: { [slot: string]: EquipmentItem } = {}; // Slot-based equipment: the NARRATIVE source of truth for what they wear/hold. The LLM reads clothing from here, never from outfits.
-    purchasedPowers?: string[]; // Powers/skills bought from the Game Master for this summon (narrative until the traits system lands).
+    purchasedPowers?: string[]; // Powers/skills bought from the Game Master for this summon.
+    traits: string[] = []; // 3-7 trait names from the catalog, assigned at distillation. The sole route past rank 7.
     factionId: string = ''; // If this actor belongs to a faction, the ID of that faction; '' is the PARC or independent
     avatarImageUrl: string;
     // 'patient' indicates an echo origin, 'faction' indicates a someone generated as a faction representative, 'aide' is the station aide, and 'emergent' is a character generated as a result of narrative activity.
@@ -149,6 +151,7 @@ class Actor {
         }
         if (!actor.equipped) actor.equipped = {};
         if (!actor.purchasedPowers) actor.purchasedPowers = [];
+        if (!actor.traits) actor.traits = [];
         // Backfill any capability stat missing from an older save (e.g. Reflex, added in the
         // rank-spine pass) so stat rows and derived Health never read undefined.
         if (actor.stats) {
@@ -232,9 +235,11 @@ class Actor {
      * clean baseline read-out so the rest of the game can reference a summon's max health.
      */
     getMaxHealth(): number {
-        const brawn = this.stats[Stat.Brawn] ?? HUMAN_AVERAGE;
-        const nerve = this.stats[Stat.Nerve] ?? HUMAN_AVERAGE;
-        return 20 + brawn * 5 + nerve * 3;
+        const brawn = this.getEffectiveStat(Stat.Brawn);
+        const nerve = this.getEffectiveStat(Stat.Nerve);
+        let traitHealth = 0;
+        for (const trait of this.getTraitDefs()) traitHealth += trait.h || 0;
+        return 20 + brawn * 5 + nerve * 3 + traitHealth * HEALTH_PER_TRAIT_POINT;
     }
 
     /**
@@ -242,12 +247,19 @@ class Actor {
      * later passes), hard-clamped to the rank cap. Bond stats pass through unmodified - gear can't
      * buy affection.
      */
+    getTraitDefs(): TraitDef[] {
+        return (this.traits || []).map(name => getTraitByName(name)).filter(Boolean) as TraitDef[];
+    }
+
     getEffectiveStat(stat: Stat): number {
         const base = this.stats[stat] ?? HUMAN_AVERAGE;
         if (!isCapabilityStat(stat)) return base;
         let bonus = 0;
         for (const item of Object.values(this.equipped || {})) {
             bonus += item?.bonuses?.[stat] || 0;
+        }
+        for (const trait of this.getTraitDefs()) {
+            bonus += trait.m?.[stat] || 0;
         }
         return Math.max(1, Math.min(RANK_MAX, base + bonus));
     }
@@ -263,7 +275,7 @@ class Actor {
      * 3 stars until traits exist - that's expected, not a bug.
      */
     getStarRating(): number {
-        const vals = CAPABILITY_STATS.map(s => this.stats[s] ?? HUMAN_AVERAGE);
+        const vals = CAPABILITY_STATS.map(s => this.getEffectiveStat(s)); // stars reflect traits + gear (Pass 6 shift)
         const peak = Math.max(...vals);
         const avg = vals.reduce((a, b) => a + b, 0) / vals.length;
         let stars: number;
@@ -551,6 +563,7 @@ export async function loadReserveActor(data: any, stage: Stage, includeHistory: 
                 `OUTFIT_FEET: What they arrive wearing on their feet, same format\n` +
                 `OUTFIT_HELD: A single item they arrive holding or carrying, same format, or \"None\" (most people arrive holding nothing)\n` +
                 `OUTFIT_UNDERWEAR: What they arrive wearing as undergarments, same format, or \"None\"\n` +
+                `TRAITS: 3-7 comma-separated trait names capturing this character's defining qualities, chosen ONLY from the Trait Catalog provided below - copy names exactly; do not invent traits\n` +
                 `NAME: Their simple name\n` +
                 `VOICE: Output the specific voice ID from the Available Voices section that best matches the character's apparent gender (foremost) and personality.\n` +
                 `COLOR: A hex color that reflects the character's theme or mood—use darker or richer colors that will contrast with white text.\n` +
@@ -572,6 +585,7 @@ export async function loadReserveActor(data: any, stage: Stage, includeHistory: 
                 `OUTFIT_FEET: Combat boots | Broken-in black boots, laced tight\n` +
                 `OUTFIT_HELD: None\n` +
                 `OUTFIT_UNDERWEAR: Plain cotton set | Simple, practical underwear\n` +
+                `TRAITS: Survivor, Steady Hands, Protective Instinct, Night Owl\n` +
                 `NAME: Jane Doe\n` +
                 `VOICE: 03a438b7-ebfa-4f72-9061-f086d8f1fca6\n` +
                 `COLOR: #333333\n` +
@@ -588,7 +602,8 @@ export async function loadReserveActor(data: any, stage: Stage, includeHistory: 
                 `#END#`) +
             (stage.getSave().attenuation ? 
                 buildPromptSegment(`Attenuation`, 
-                    `The app's summoning parameters are currently attuned to shape the resulting summon; take the following additional context into account while forming this distillation:\n${stage.getSave().attenuation}`) : 
+                    `Trait Catalog (choose TRAITS only from these names): ${traitCatalogNames()}\n\n` +
+            `The app's summoning parameters are currently attuned to shape the resulting summon; take the following additional context into account while forming this distillation:\n${stage.getSave().attenuation}`) : 
                 '')),
         stop: ['#END'],
         include_history: true, // There won't be any history, but if this is true, the front-end doesn't automatically apply pre-/post-history prompts.
@@ -717,6 +732,17 @@ export async function loadReserveActor(data: any, stage: Stage, includeHistory: 
         // "None" must never become an actual item - an empty slot is empty.
         if (!name || name.length < 2 || isNoneish(name)) continue;
         newActor.equipped[slot] = createTemporaryItem(name, desc || '', slot);
+    }
+
+    // Traits: resolve the LLM's picks against the catalog (unknowns dropped, max 7), then apply
+    // bond BASELINE shifts once - who they are on arrival, clamped to the human band. Capability
+    // and Health modifiers are NOT baked into base; they act through getEffectiveStat/getMaxHealth.
+    const traitDefs = resolveTraits((parsedData['traits'] || '').split(',').map((t: string) => t.trim()).filter(Boolean));
+    newActor.traits = traitDefs.map(t => t.n);
+    for (const trait of traitDefs) {
+        for (const [stat, amt] of Object.entries(trait.b || {})) {
+            newActor.stats[stat as Stat] = Math.max(1, Math.min(7, (newActor.stats[stat as Stat] ?? HUMAN_AVERAGE) + amt));
+        }
     }
 
     return newActor;
