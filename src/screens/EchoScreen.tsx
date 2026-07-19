@@ -44,6 +44,45 @@ export const EchoScreen: FC<EchoScreenProps> = ({ stage, setScreenType }) => {
 
 	const refresh = () => setRefreshKey(k => k + 1);
 
+	// Hidden debug attenuator: double-click the lower-left corner to open a URL box that
+	// hand-curates the reserve. Not user-facing; a dev tool for testing specific characters.
+	const [debugOpen, setDebugOpen] = React.useState(false);
+	const [debugUrl, setDebugUrl] = React.useState('');
+	const [debugBusy, setDebugBusy] = React.useState(false);
+	const [debugMsg, setDebugMsg] = React.useState('');
+	const lastCornerClick = React.useRef(0);
+
+	const onCornerClick = () => {
+		const now = Date.now();
+		if (now - lastCornerClick.current < 400) {
+			// Second click within 400ms: activate. Discards the random reserve and pauses auto-fill.
+			stage().setDebugCurate(true);
+			setDebugOpen(true);
+			setDebugMsg('');
+			refresh();
+			lastCornerClick.current = 0;
+		} else {
+			lastCornerClick.current = now;
+		}
+	};
+
+	const submitDebugUrl = async () => {
+		if (!debugUrl.trim() || debugBusy) return;
+		setDebugBusy(true);
+		setDebugMsg('Distilling…');
+		const ok = await stage().debugSummonFromUrl(debugUrl);
+		setDebugBusy(false);
+		setDebugMsg(ok ? 'Added to reserve.' : 'Failed — check the URL/path.');
+		if (ok) setDebugUrl('');
+		refresh();
+	};
+
+	const exitDebug = () => {
+		stage().setDebugCurate(false);
+		setDebugOpen(false);
+		refresh();
+	};
+
 	// Keep a candidate on deck: if the pool is empty, ask the app to serve one up.
 	React.useEffect(() => {
 		if (!candidate && !loading) {
@@ -286,6 +325,39 @@ export const EchoScreen: FC<EchoScreenProps> = ({ stage, setScreenType }) => {
 			{/* detail overlay - the "look before you decide" view */}
 			{showDetail && candidate && (
 				<ActorDetailScreen actor={candidate} stage={stage} onClose={() => setShowDetail(false)} />
+			)}
+
+			{/* hidden debug hotspot: lower-left corner, double-click to open the curation box */}
+			<div
+				onClick={onCornerClick}
+				style={{ position: 'absolute', left: 0, bottom: 0, width: 56, height: 56, zIndex: 6, cursor: 'default' }}
+				aria-hidden="true"
+			/>
+
+			{/* debug curation panel */}
+			{debugOpen && (
+				<div style={{ position: 'absolute', left: 12, bottom: 12, zIndex: 30, width: 'min(360px, 88vw)', padding: 14, borderRadius: 12, background: 'rgba(6,4,12,0.96)', border: '1px solid rgba(176,102,255,0.5)', boxShadow: '0 10px 30px rgba(0,0,0,0.6)' }}>
+					<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+						<b style={{ fontSize: '0.85rem', letterSpacing: '0.04em', color: '#b066ff' }}>DEBUG · CURATE RESERVE</b>
+						<button onClick={exitDebug} style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', fontSize: '1rem' }}>&#10005;</button>
+					</div>
+					<div style={{ fontSize: '0.72rem', opacity: 0.7, marginBottom: 8 }}>
+						Random fill is paused. Paste a Chub character URL (or author/slug) to distill it straight into the reserve.
+					</div>
+					<input
+						value={debugUrl}
+						onChange={e => setDebugUrl(e.target.value)}
+						onKeyDown={e => { if (e.key === 'Enter') submitDebugUrl(); }}
+						placeholder="https://chub.ai/characters/author/slug"
+						style={{ width: '100%', padding: '8px 10px', borderRadius: 8, background: 'rgba(11,7,18,0.8)', color: 'inherit', border: '1px solid rgba(176,102,255,0.35)', boxSizing: 'border-box', fontSize: '0.8rem' }}
+					/>
+					<div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8 }}>
+						<Button onClick={submitDebugUrl} disabled={!debugUrl.trim() || debugBusy}>{debugBusy ? 'Working…' : 'Distill'}</Button>
+						<Button onClick={exitDebug}>Exit (resume randoms)</Button>
+						{debugMsg && <span style={{ fontSize: '0.72rem', opacity: 0.8 }}>{debugMsg}</span>}
+					</div>
+					<div style={{ fontSize: '0.72rem', opacity: 0.6, marginTop: 8 }}>In reserve: {(stage().getSave().reserveActors || []).length}</div>
+				</div>
 			)}
 		</div>
 	);

@@ -1032,6 +1032,40 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
 
     private searchCooldownUntil: number = 0; // Backoff after a failed/rate-limited character search - the UI re-triggers fills aggressively when the pool is empty, so without this a 429 becomes a hammering loop.
     private ensureTraitsPromise?: Promise<void>;
+    debugCurate: boolean = false; // Debug attenuator: when true, random reserve fill is paused so only manually-distilled URLs populate the pool. Session-only, not persisted.
+
+    /** DEBUG: clear the reserve and enter/exit manual-curation mode (loadReserveActors no-ops while on). */
+    setDebugCurate(on: boolean): void {
+        this.debugCurate = on;
+        if (on) {
+            this.getSave().reserveActors = [];
+            this.saveGame();
+        }
+    }
+
+    /**
+     * DEBUG: distill a specific character into the reserve from a Chub URL or bare "author/slug"
+     * fullPath. Runs the normal pipeline (distill -> traits). Returns true if a character was added.
+     */
+    async debugSummonFromUrl(input: string): Promise<boolean> {
+        const raw = (input || '').trim();
+        if (!raw) return false;
+        let fullPath = raw;
+        const m = raw.match(/chub\.ai\/characters\/([^?#\s]+)/i);
+        if (m) fullPath = m[1];
+        fullPath = fullPath.replace(/^\/+|\/+$/g, '');
+        try {
+            const actor = await loadReserveActorFromFullPath(fullPath, this);
+            if (!actor) return false;
+            await assignTraitsToActor(actor, this);
+            this.getSave().reserveActors = [...(this.getSave().reserveActors || []), actor];
+            this.saveGame();
+            return true;
+        } catch (e) {
+            console.warn('[debug] URL distill failed', e);
+            return false;
+        }
+    }
 
     /**
      * Second-pass trait assignment over the reserve: walks candidates one at a time (sequential,
@@ -1060,6 +1094,8 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
     }
 
     async loadReserveActors() {
+        // Debug curation mode: don't pull randoms - the pool is hand-curated via URL.
+        if (this.debugCurate) return;
         // Backfill guard: assign traits to any untraited candidates ALREADY in the pool (from
         // builds before the per-candidate pipeline). Deduped internally; no-op when all traited.
         void this.ensureReserveTraits();

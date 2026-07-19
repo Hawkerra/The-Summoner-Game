@@ -86,7 +86,10 @@ export async function assignTraitsToActor(actor: any, stage: any): Promise<void>
             `Choose the 3 to 7 catalog traits that BEST capture who ${actor.name} specifically is - their ` +
             `defining personality, notable capabilities, and where the character genuinely supports it, their ` +
             `romantic/lust-oriented side (do not shy away from those traits when they fit). Fit beats variety: ` +
-            `every pick should make someone who knows this character nod. If few traits truly fit, pick fewer.\n\n` +
+            `every pick should make someone who knows this character nod. If few traits truly fit, pick fewer.\n` +
+            `AVOID redundancy: do not pick several traits that all express the same idea. If a character is, say, ` +
+            `intensely social, ONE or at most two social traits capture that - spend the rest of the picks on their ` +
+            `OTHER defining facets (a rarer, higher-impact trait is better than three near-synonyms).\n\n` +
             `Respond with EXACTLY two lines:\n` +
             `ANALYSIS: <one sentence on who this character is>\n` +
             `TRAITS: <3-7 comma-separated catalog names>`;
