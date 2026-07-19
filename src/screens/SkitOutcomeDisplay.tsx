@@ -221,7 +221,7 @@ const SkitOutcomeDisplay: FC<SkitOutcomeDisplayProps> = ({ outcomes, stage, layo
                 return;
             }
 
-            if (outcome.type === 'roleChange' || outcome.type === 'factionChange' || outcome.type === 'movement' || outcome.type === 'newOutfit') {
+            if (outcome.type === 'roleChange' || outcome.type === 'factionChange' || outcome.type === 'movement' || outcome.type === 'newOutfit' || outcome.type === 'equipGain' || outcome.type === 'equipLoss' || outcome.type === 'equipDamage') {
                 const group = ensureGroup(actorId, order);
                 group.outcomes.push({ outcome, order });
                 mappedOutcomeOrders.add(order);
@@ -346,6 +346,12 @@ const SkitOutcomeDisplay: FC<SkitOutcomeDisplayProps> = ({ outcomes, stage, layo
                 return { border: 'rgba(99,102,241,0.32)', background: 'linear-gradient(135deg, rgba(59,130,246,0.14) 0%, rgba(99,102,241,0.22) 50%, rgba(139,92,246,0.12) 100%)', color: '#a5b4fc' };
             case 'newOutfit':
                 return { border: 'rgba(16,185,129,0.32)', background: 'linear-gradient(135deg, rgba(16,185,129,0.14) 0%, rgba(6,182,212,0.20) 50%, rgba(14,165,233,0.12) 100%)', color: '#10b981' };
+            case 'equipGain':
+                return { border: 'rgba(87,224,138,0.32)', background: 'rgba(87,224,138,0.10)', color: '#57e08a' };
+            case 'equipLoss':
+                return { border: 'rgba(255,212,83,0.32)', background: 'rgba(255,212,83,0.10)', color: '#ffd453' };
+            case 'equipDamage':
+                return { border: 'rgba(255,80,80,0.32)', background: 'rgba(255,80,80,0.10)', color: '#ff7b7b' };
             case 'newActor':
                 return { border: 'rgba(255,200,0,0.32)', background: 'rgba(255,200,0,0.10)', color: '#ffc800' };
             case 'movement':
@@ -373,6 +379,9 @@ const SkitOutcomeDisplay: FC<SkitOutcomeDisplayProps> = ({ outcomes, stage, layo
             case 'newModule':
                 return DomainAdd;
             case 'newOutfit':
+            case 'equipGain':
+            case 'equipLoss':
+            case 'equipDamage':
                 return ContentCut;
             case 'newActor':
                 return PersonAdd;
@@ -592,6 +601,23 @@ const SkitOutcomeDisplay: FC<SkitOutcomeDisplayProps> = ({ outcomes, stage, layo
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, mt: group.entries.length > 0 ? 1 : 0 }}>
             {group.outcomes.map(({ outcome }, index) => {
                 switch (outcome.type) {
+                    case 'equipGain':
+                    case 'equipLoss':
+                    case 'equipDamage': {
+                        const label = outcome.type === 'equipGain' ? 'Gained' : outcome.type === 'equipLoss' ? 'Lost' : 'Damaged';
+                        const color = outcome.type === 'equipGain' ? '#57e08a' : outcome.type === 'equipLoss' ? '#ffd453' : '#ff7b7b';
+                        const detail = outcome.type === 'equipGain'
+                            ? `${outcome.equip?.itemName || 'item'} (${outcome.equip?.slot})`
+                            : outcome.type === 'equipLoss'
+                                ? `${outcome.equip?.slot} item`
+                                : `${outcome.equip?.slot} item −${outcome.equip?.amount || 1} durability`;
+                        return (
+                            <Box key={`equip_${index}`} sx={{ ...outcomeContentCardSx, background: 'rgba(18,10,32,0.5)', border: `1px solid ${color}55`, textAlign: 'left' }}>
+                                <Typography sx={{ ...outcomeMicroLabelSx, color }}>Equipment</Typography>
+                                <Typography sx={{ ...outcomeBodyTextSx, fontWeight: 700 }}>{label}: {detail}</Typography>
+                            </Box>
+                        );
+                    }
                     case 'roleChange': {
                         const previousRole = group.actor ? getRole(group.actor, save).trim() : '';
                         const previousRoleLabel = previousRole.length > 0 ? previousRole : 'Patient';

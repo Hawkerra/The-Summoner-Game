@@ -31,7 +31,8 @@ export const ShopScreen: FC<ShopScreenProps> = ({ stage, setScreenType }) => {
 	// Custom request state
 	const [request, setRequest] = React.useState('');
 	const [pricing, setPricing] = React.useState(false);
-	const [offer, setOffer] = React.useState<{ request: string; price: number; remark: string } | null>(null);
+	const [offer, setOffer] = React.useState<{ request: string; price: number; remark: string; itemType?: string; slot?: string; bonusStat?: string; bonusAmount?: number; effect?: string } | null>(null);
+	const [powerTargetId, setPowerTargetId] = React.useState<string>('');
 
 	const askGm = async () => {
 		const req = request.trim();
@@ -41,14 +42,16 @@ export const ShopScreen: FC<ShopScreenProps> = ({ stage, setScreenType }) => {
 		const result = await stage().priceCustomRequest(req);
 		setPricing(false);
 		if (result) setOffer({ request: req, ...result });
-		else setOffer({ request: req, price: -1, remark: 'The Game Master does not deign to answer. Try again.' });
+		else setOffer({ request: req, price: -1, remark: 'The Game Master does not deign to answer. Try again.', itemType: 'OTHER' });
 	};
 
 	const buyOffer = () => {
 		if (!offer || offer.price <= 0) return;
-		if (stage().buyCustomRequest(offer.request, offer.price, offer.remark)) {
+		if (offer.itemType === 'POWER' && !powerTargetId) return; // a power needs a recipient
+		if (stage().buyCustomRequest(offer.request, offer, powerTargetId || undefined)) {
 			setOffer(null);
 			setRequest('');
+			setPowerTargetId('');
 			refresh();
 		}
 	};
@@ -90,6 +93,13 @@ export const ShopScreen: FC<ShopScreenProps> = ({ stage, setScreenType }) => {
 							<div style={{ fontSize: '0.8rem', opacity: 0.7 }}>One extra summon active at a time, up to three.</div>
 						</div>
 						<Button onClick={() => { if (stage().buyMultiSummonToken()) refresh(); }} disabled={sp < 100 || stage().getActiveSummonCap() >= 3}>100 SP</Button>
+					</div>
+					<div style={rowStyle}>
+						<div style={{ minWidth: 0 }}>
+							<b>Repair Token</b> <span style={{ opacity: 0.6 }}>(owned: {save.repairTokens || 0})</span>
+							<div style={{ fontSize: '0.8rem', opacity: 0.7 }}>Instantly restore a System item's durability (used from Summon Management).</div>
+						</div>
+						<Button onClick={() => { if (stage().buyRepairToken()) refresh(); }} disabled={sp < 10}>10 SP</Button>
 					</div>
 				</div>
 
@@ -153,8 +163,28 @@ export const ShopScreen: FC<ShopScreenProps> = ({ stage, setScreenType }) => {
 						)}
 					</div>
 					{offer && (
-						<div style={{ marginTop: 10, fontSize: '0.85rem', fontStyle: 'italic', opacity: 0.85 }}>
-							{offer.price > 0 ? <><b>{offer.price} SP</b> &mdash; </> : null}&ldquo;{offer.remark}&rdquo;
+						<div style={{ marginTop: 10, fontSize: '0.85rem', opacity: 0.9 }}>
+							<div style={{ fontStyle: 'italic' }}>
+								{offer.price > 0 ? <><b>{offer.price} SP</b> &mdash; </> : null}&ldquo;{offer.remark}&rdquo;
+							</div>
+							{offer.price > 0 && (
+								<div style={{ fontSize: '0.75rem', opacity: 0.65, marginTop: 4 }}>
+									Classified: {offer.itemType || 'OTHER'}
+									{offer.slot ? ` · slot: ${offer.slot}` : ''}
+									{offer.bonusStat ? ` · +${offer.bonusAmount} ${offer.bonusStat}` : ''}
+									{offer.effect && offer.effect !== 'NONE' ? ` · ${offer.effect}` : ''}
+								</div>
+							)}
+							{offer.price > 0 && offer.itemType === 'POWER' && (
+								<select
+									value={powerTargetId}
+									onChange={e => setPowerTargetId(e.target.value)}
+									style={{ marginTop: 6, width: '100%', padding: '6px 8px', borderRadius: 8, background: 'rgba(11,7,18,0.8)', color: 'inherit', border: '1px solid rgba(176,102,255,0.3)' }}
+								>
+									<option value="">Grant this power to&hellip;</option>
+									{roster.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+								</select>
+							)}
 						</div>
 					)}
 					{(save.gmPurchases?.length || 0) > 0 && (
@@ -166,6 +196,22 @@ export const ShopScreen: FC<ShopScreenProps> = ({ stage, setScreenType }) => {
 										<b>{p.request}</b> &mdash; {p.price} SP
 									</div>
 								))}
+							</div>
+						</details>
+					)}
+					{(stage().getEquipmentArchive().length + (save.consumables?.length || 0)) > 0 && (
+						<details style={{ marginTop: 12 }}>
+							<summary style={{ cursor: 'pointer', fontSize: '0.8rem', opacity: 0.7 }}>
+								Item storage ({stage().getEquipmentArchive().length} equipment, {save.consumables?.length || 0} usable)
+							</summary>
+							<div style={{ marginTop: 6, fontSize: '0.8rem', opacity: 0.8 }}>
+								{stage().getEquipmentArchive().map(i => (
+									<div key={i.id} style={{ padding: '3px 0' }}><b>{i.name}</b> ({i.slot}, {i.kind}) {i.bonuses ? `— ${Object.entries(i.bonuses).map(([k,v]) => `+${v} ${k}`).join(', ')}` : ''}</div>
+								))}
+								{(save.consumables || []).map(c => (
+									<div key={c.id} style={{ padding: '3px 0' }}><b>{c.name}</b> (usable{c.effect && c.effect !== 'NONE' ? `, ${c.effect}` : ''})</div>
+								))}
+								<div style={{ opacity: 0.6, marginTop: 4 }}>Equip and use items from Summon Management.</div>
 							</div>
 						</details>
 					)}

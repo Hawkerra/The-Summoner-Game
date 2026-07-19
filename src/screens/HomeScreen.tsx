@@ -13,6 +13,7 @@ import { Stage } from '../Stage';
 import { SkitType } from '../Skit';
 import { GameLocation, DISCOVERABLE_PLACES } from '../Location';
 import { Button } from '../components/UIComponents';
+import { ActorDetailScreen } from './ActorDetailScreen';
 
 interface HomeScreenProps {
     stage: () => Stage;
@@ -22,6 +23,7 @@ interface HomeScreenProps {
 
 export const HomeScreen: FC<HomeScreenProps> = ({ stage, setScreenType }) => {
     const [, setRefreshKey] = React.useState(0);
+    const [detailActorId, setDetailActorId] = React.useState<string | null>(null);
     const refresh = () => setRefreshKey(k => k + 1);
 
     // On mount, land in the current location (marks it visited, runs the archive sweep, gens bg).
@@ -108,7 +110,7 @@ export const HomeScreen: FC<HomeScreenProps> = ({ stage, setScreenType }) => {
                     <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
                         <Button onClick={() => setScreenType(ScreenType.ECHO)}>Summon</Button>
                         <Button onClick={() => setScreenType(ScreenType.SHOP)}>Shop ({stage().getSp()} SP)</Button>
-                        <Button onClick={() => setScreenType(ScreenType.CRYO)}>Void</Button>
+                        <Button onClick={() => setScreenType(ScreenType.CRYO)}>Summons</Button>
                         <Button onClick={() => setScreenType(ScreenType.MENU)}>Menu</Button>
                     </div>
                 </div>
@@ -120,16 +122,19 @@ export const HomeScreen: FC<HomeScreenProps> = ({ stage, setScreenType }) => {
                             {activeSummons.map(summon => {
                                 const url = summon.getEmotionImage('neutral', stage());
                                 return (
-                                    <div key={summon.id} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, textAlign: 'center' }}>
+                                    <div key={summon.id} onClick={() => setDetailActorId(summon.id)} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, textAlign: 'center', cursor: 'pointer' }} title="View details">
                                         <div style={{
                                             width: activeSummons.length > 1 ? 'min(170px, 42vw)' : 'min(240px, 60vw)',
                                             height: activeSummons.length > 1 ? 'min(230px, 34vh)' : 'min(320px, 46vh)',
-                                            borderRadius: 16,
-                                            backgroundImage: url ? `url(${url})` : undefined,
-                                            background: url ? undefined : `linear-gradient(160deg, ${summon.themeColor}55, transparent)`,
-                                            backgroundSize: 'cover', backgroundPosition: 'center top',
+                                            borderRadius: 16, overflow: 'hidden',
+                                            background: `linear-gradient(160deg, ${summon.themeColor || '#b066ff'}55, transparent)`,
                                             border: `2px solid ${summon.themeColor || '#b066ff'}`,
-                                        }} />
+                                        }}>
+                                            {url && (
+                                                <img src={url} alt={summon.name} draggable={false}
+                                                    style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center top', display: 'block', pointerEvents: 'none' }} />
+                                            )}
+                                        </div>
                                         <div style={{ fontWeight: 600, color: summon.themeColor || '#b066ff' }}>{summon.name}</div>
                                     </div>
                                 );
@@ -181,6 +186,9 @@ export const HomeScreen: FC<HomeScreenProps> = ({ stage, setScreenType }) => {
                     </div>
                 </details>
             </div>
+            {detailActorId && stage().getSave().actors[detailActorId] && (
+                <ActorDetailScreen actor={stage().getSave().actors[detailActorId]} stage={stage} onClose={() => setDetailActorId(null)} />
+            )}
         </div>
     );
 };

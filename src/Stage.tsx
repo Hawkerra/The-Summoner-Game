@@ -3,6 +3,7 @@ import {StageBase, StageResponse, InitialData, Message, UpdateBuilder, AspectRat
 import {LoadResponse} from "@chub-ai/stages-ts/dist/types/load";
 import Actor, { loadReserveActor, commitActorToEcho, Stat, CAPABILITY_STATS, RANK_MAX, generateAdditionalActorImages, loadReserveActorFromFullPath, ArtStyle, generateActorDecor, namesMatch, findBestNameMatch, generateBaseActorImage, getRole } from "./actors/Actor";
 import { GameLocation, createHomeLocation, createLocation, HOME_LOCATION_ID, ARCHIVE_AFTER_TURNS, DISCOVERABLE_PLACES } from "./Location";
+import { EquipmentItem, EquipSlot, EQUIP_SLOTS, SYSTEM_MAX_DURABILITY, createTemporaryItem, archiveEquipmentItem, findArchiveMatch } from "./Equipment";
 import Faction, { generateFactionModule, generateFactionRepresentative, loadReserveFaction } from "./factions/Faction";
 import { DEFAULT_GRID_WIDTH, DEFAULT_GRID_HEIGHT, Layout, MODULE_TEMPLATES, StationStat, createModule, registerFactionModule, ModuleIntrinsic, generateModule, generateModuleImage, Module, registerModule, FLOOR_BUILD_COSTS, MAX_FLOORS } from './Module';
 import { BaseScreen, ScreenType } from "./screens/BaseScreen";
@@ -60,7 +61,10 @@ export type SaveType = {
     sp?: number; // Summoner Points - earned 1 per skit section on skit end (and later from events).
     aestheticTokens?: number; // Shop: change one physical thing about a summon's appearance, chosen upon use.
     newSummonTokens?: number; // Shop: required to accept each summon beyond the first.
-    gmPurchases?: { request: string; price: number; remark: string }[]; // Custom items granted by the Game Master via the shop's prompt box.
+    gmPurchases?: { request: string; price: number; remark: string }[]; // Narrative-only Game Master grants (type 'other').
+    equipmentArchive?: EquipmentItem[]; // Unequipped/lost item storage - the dedup layer AND the player's item pool for equipping.
+    repairTokens?: number; // Shop: instantly restore a System item's durability.
+    consumables?: { id: string; name: string; effect: string; remark: string }[]; // Usable items from the Game Master (effect tags: BOND:stat:+n, STAT:stat:+n, HEAL:n, NONE).
     locations?: {[id: string]: GameLocation}; // The location graph (Home is root); replaces the tower grid.
     currentLocationId?: string; // Where the player currently is.
     cityName?: string; // Optional player-set name for the city/setting the game takes place in.
@@ -1288,7 +1292,10 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
         const cap = this.getActiveSummonCap();
         while (save.activeActorIds.length > cap) {
             const removed = save.activeActorIds.shift();
-            if (removed && save.actors[removed]) save.actors[removed].locationId = 'cryo';
+            if (removed && save.actors[removed]) {
+                this.stripTemporaryEquipment(save.actors[removed]);
+                save.actors[removed].locationId = 'cryo';
+            }
         }
         return save.activeActorIds;
     }
@@ -1338,11 +1345,64 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
         if (activeIds.includes(actorId)) return true;
         if (activeIds.length >= this.getActiveSummonCap()) {
             const removed = activeIds.shift();
-            if (removed && save.actors[removed]) save.actors[removed].locationId = 'cryo';
+            if (removed && save.actors[removed]) {
+                this.stripTemporaryEquipment(save.actors[removed]);
+                save.actors[removed].locationId = 'cryo';
+            }
         }
         target.locationId = this.getCurrentLocationId();
         target.recoveryUntilTurn = undefined; // fully recovered by the time it's re-summoned
         activeIds.push(actorId);
+        this.saveGame();
+        return true;
+    }
+
+    getEquipmentArchive(): EquipmentItem[] {
+        const save = this.getSave();
+        if (!save.equipmentArchive) save.equipmentArchive = [];
+        return save.equipmentArchive;
+    }
+
+    /**
+     * Desummoning strips ALL Temporary equipment (it drops where they stood / vanishes into the
+     * void) into the archive, durability reset. System equipment stays with them - that's what
+     * permanence means.
+     */
+    stripTemporaryEquipment(actor: Actor): void {
+        if (!actor?.equipped) return;
+        const archive = this.getEquipmentArchive();
+        for (const slot of Object.keys(actor.equipped)) {
+            const item = actor.equipped[slot];
+            if (item && item.kind === 'temporary') {
+                archiveEquipmentItem(archive, item);
+                delete actor.equipped[slot];
+            }
+        }
+    }
+
+    /** Move an archived item onto a summon (into the item's own slot); any displaced item is archived. */
+    equipFromArchive(actorId: string, itemId: string): boolean {
+        const save = this.getSave();
+        const actor = save.actors[actorId];
+        const archive = this.getEquipmentArchive();
+        const idx = archive.findIndex(i => i.id === itemId);
+        if (!actor || idx < 0) return false;
+        const item = archive.splice(idx, 1)[0];
+        const displaced = actor.equipped[item.slot];
+        if (displaced) archiveEquipmentItem(archive, displaced);
+        actor.equipped[item.slot] = item;
+        this.saveGame();
+        return true;
+    }
+
+    /** Take an item off a summon into the archive. */
+    unequipToArchive(actorId: string, slot: string): boolean {
+        const save = this.getSave();
+        const actor = save.actors[actorId];
+        const item = actor?.equipped?.[slot];
+        if (!item) return false;
+        archiveEquipmentItem(this.getEquipmentArchive(), item);
+        delete actor.equipped[slot];
         this.saveGame();
         return true;
     }
@@ -1352,6 +1412,7 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
         const save = this.getSave();
         const actor = save.actors[actorId];
         if (!actor) return;
+        this.stripTemporaryEquipment(actor);
         actor.locationId = 'cryo';
         save.activeActorIds = this.getActiveIds().filter(id => id !== actorId);
         this.saveGame();
@@ -1366,6 +1427,7 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
         const save = this.getSave();
         const actor = save.actors[actorId];
         if (!actor) return;
+        this.stripTemporaryEquipment(actor);
         actor.locationId = 'cryo';
         actor.recoveryUntilTurn = this.getElapsedTurns() + actor.getRecoveryDuration();
         save.activeActorIds = this.getActiveIds().filter(id => id !== actorId);
@@ -1659,6 +1721,43 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
                 const moduleData = outcome.module;
                 // Kick off module generation
                 console.log(`End Test: Generating new module "${moduleData.moduleName}" due to skit outcome.`);
+            } else if (outcome.type === 'equipGain' && outcome.actorId && outcome.equip?.slot && outcome.equip.itemName) {
+                const actor = save.actors[outcome.actorId];
+                if (actor) {
+                    const archive = this.getEquipmentArchive();
+                    // Dedup: a similar archived item is RESTORED (durability already reset on archive)
+                    // instead of minting a near-duplicate.
+                    const match = findArchiveMatch(archive, outcome.equip.itemName);
+                    let item: EquipmentItem;
+                    if (match) {
+                        archive.splice(archive.indexOf(match), 1);
+                        item = match;
+                        item.slot = outcome.equip.slot;
+                    } else {
+                        item = createTemporaryItem(outcome.equip.itemName, outcome.equip.itemDescription || '', outcome.equip.slot);
+                    }
+                    const displaced = actor.equipped[outcome.equip.slot];
+                    if (displaced) archiveEquipmentItem(archive, displaced);
+                    actor.equipped[outcome.equip.slot] = item;
+                }
+            } else if (outcome.type === 'equipLoss' && outcome.actorId && outcome.equip?.slot) {
+                const actor = save.actors[outcome.actorId];
+                const item = actor?.equipped?.[outcome.equip.slot];
+                if (actor && item) {
+                    archiveEquipmentItem(this.getEquipmentArchive(), item);
+                    delete actor.equipped[outcome.equip.slot];
+                }
+            } else if (outcome.type === 'equipDamage' && outcome.actorId && outcome.equip?.slot) {
+                const actor = save.actors[outcome.actorId];
+                const item = actor?.equipped?.[outcome.equip.slot];
+                if (actor && item) {
+                    item.durability = Math.max(0, item.durability - (outcome.equip.amount || 1));
+                    if (item.durability <= 0) {
+                        // Broken: removed from the slot; waits whole in the archive (durability resets there).
+                        archiveEquipmentItem(this.getEquipmentArchive(), item);
+                        delete actor.equipped[outcome.equip.slot];
+                    }
+                }
             } else if (outcome.type === 'newOutfit' && outcome.actorId && outcome.outfit && outcome.outfit.outfitName) {
                 const actor = save.actors[outcome.actorId];
                 const outfit = outcome.outfit;
@@ -2064,12 +2163,73 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
         return true;
     }
 
+    buyRepairToken(): boolean {
+        if (!this.spendSp(10)) return false; // [PROPOSED price - not in the spec]
+        const save = this.getSave();
+        save.repairTokens = (save.repairTokens || 0) + 1;
+        this.saveGame();
+        return true;
+    }
+
+    /** Instantly repair a System item with a Repair Token. Temporary gear can't be repaired this way. */
+    repairEquippedItem(actorId: string, slot: string): boolean {
+        const save = this.getSave();
+        const item = save.actors[actorId]?.equipped?.[slot];
+        if (!item || item.kind !== 'system' || item.durability >= item.maxDurability) return false;
+        if ((save.repairTokens || 0) < 1) return false;
+        save.repairTokens = (save.repairTokens || 0) - 1;
+        item.durability = item.maxDurability;
+        this.saveGame();
+        return true;
+    }
+
+    /** Temp->System conversion: permanence only - no bonuses. [PROPOSED price 25 SP - not in the spec] */
+    convertTempToSystem(actorId: string, slot: string): boolean {
+        const save = this.getSave();
+        const item = save.actors[actorId]?.equipped?.[slot];
+        if (!item || item.kind !== 'temporary') return false;
+        if (!this.spendSp(25)) return false;
+        item.kind = 'system';
+        item.maxDurability = SYSTEM_MAX_DURABILITY;
+        this.saveGame();
+        return true;
+    }
+
+    /**
+     * Use a consumable on a summon. Starter effect tags (assigned by the GM at purchase):
+     *  BOND:<lust|joy|trust>:<+/-n>  - shift a bond meter (clamped to the human band, 1-7)
+     *  STAT:<capability>:<+/-n>      - shift a capability stat (clamped 1-13)
+     *  HEAL:<n>                      - reserved until Health lands as a trackable pool (no-op now)
+     *  NONE                          - purely narrative
+     */
+    useConsumable(consumableId: string, actorId: string): boolean {
+        const save = this.getSave();
+        const list = save.consumables || [];
+        const idx = list.findIndex(c => c.id === consumableId);
+        const actor = save.actors[actorId];
+        if (idx < 0 || !actor) return false;
+        const effect = (list[idx].effect || 'NONE').toUpperCase();
+        const bondMatch = /^BOND:(LUST|JOY|TRUST):([+-]?\d+)$/.exec(effect);
+        const statMatch = /^STAT:(BRAWN|SKILL|NERVE|WITS|CHARM|REFLEX):([+-]?\d+)$/.exec(effect);
+        if (bondMatch) {
+            const stat = bondMatch[1].toLowerCase() as Stat;
+            actor.stats[stat] = Math.max(1, Math.min(7, (actor.stats[stat] ?? 3) + parseInt(bondMatch[2])));
+        } else if (statMatch) {
+            const stat = statMatch[1].toLowerCase() as Stat;
+            actor.stats[stat] = Math.max(1, Math.min(RANK_MAX, (actor.stats[stat] ?? 3) + parseInt(statMatch[2])));
+        }
+        // HEAL / NONE / unparsable: consumed with narrative effect only.
+        list.splice(idx, 1);
+        this.saveGame();
+        return true;
+    }
+
     /**
      * The Game Master prices a custom request from the shop's prompt box, based on how useful it
      * would be in the current situation and how entertaining the GM finds the idea. Returns a price
      * and an in-character remark, or null if pricing failed.
      */
-    async priceCustomRequest(request: string): Promise<{ price: number; remark: string } | null> {
+    async priceCustomRequest(request: string): Promise<{ price: number; remark: string; itemType: 'EQUIPMENT' | 'CONSUMABLE' | 'POWER' | 'OTHER'; slot?: string; bonusStat?: string; bonusAmount?: number; effect?: string } | null> {
         const save = this.getSave();
         const activeNames = this.getActiveSummons().map(a => a.name).join(', ') || 'none';
         const prompt = `{{messages}}You are the mysterious, unseen GAME MASTER of a hidden game in a modern world. ` +
@@ -2077,27 +2237,65 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
             `Assign an SP price by your whims: weigh how USEFUL it is in their current situation and how ENTERTAINING you'd find them having it. ` +
             `Scale: trivial/cosmetic 5-50; useful mundane items 50-300; minor powers or skills 500-2000; strong powers several thousand; game-breaking power tens of thousands. Amusing requests earn discounts; boring safety earns markups.\n` +
             `Current situation: the Summoner has ${this.getSp()} SP, ${this.getRosterSummons().length} summon(s) (active: ${activeNames}), at ${this.getCurrentLocation().name}.\n` +
-            `Respond with EXACTLY two lines and nothing else:\nPRICE: <integer>\nREMARK: <one short in-character sentence>`;
+            `Also CLASSIFY the request. TYPE is one of: EQUIPMENT (a wearable/holdable item), CONSUMABLE (a single-use item like a potion), POWER (an ability, skill, or superpower granted to a specific summon), OTHER (anything else - services, changes to the world, etc).\n` +
+            `If EQUIPMENT: include SLOT (one of: head, torso, underwear, hands, legs, feet, left hand, right hand, accessory) and optionally BONUS as <BRAWN|SKILL|NERVE|WITS|CHARM|REFLEX>:<+1 to +3> if the gear should carry a stat bonus.\n` +
+            `If CONSUMABLE: include EFFECT as one of BOND:<LUST|JOY|TRUST>:<+/-n> (e.g. a love potion is BOND:LUST:+2), STAT:<capability>:<+/-n>, HEAL:<n>, or NONE.\n` +
+            `Respond with ONLY these lines (omit inapplicable ones):\nPRICE: <integer>\nREMARK: <one short in-character sentence>\nTYPE: <EQUIPMENT|CONSUMABLE|POWER|OTHER>\nSLOT: <slot>\nBONUS: <stat>:<+n>\nEFFECT: <effect tag>`;
         try {
-            const text = await this.makeText({ prompt, max_tokens: 90, min_tokens: 5, include_history: false });
+            const text = await this.makeText({ prompt, max_tokens: 160, min_tokens: 5, include_history: false });
             const priceMatch = (text || '').match(/PRICE:\s*([0-9,]+)/i);
             const remarkMatch = (text || '').match(/REMARK:\s*(.+)/i);
             if (!priceMatch) return null;
             const price = parseInt(priceMatch[1].replace(/,/g, ''));
             if (isNaN(price) || price <= 0) return null;
-            return { price, remark: (remarkMatch?.[1] || '').trim() || 'The Game Master names its price without comment.' };
+            const typeMatch = (text || '').match(/TYPE:\s*(EQUIPMENT|CONSUMABLE|POWER|OTHER)/i);
+            const slotMatch = (text || '').match(/SLOT:\s*([a-z ]+)/i);
+            const bonusMatch = (text || '').match(/BONUS:\s*(BRAWN|SKILL|NERVE|WITS|CHARM|REFLEX)\s*:\s*([+-]?\d+)/i);
+            const effectMatch = (text || '').match(/EFFECT:\s*([A-Z]+(?::[A-Z]+)?(?::[+-]?\d+)?)/i);
+            return {
+                price,
+                remark: (remarkMatch?.[1] || '').trim() || 'The Game Master names its price without comment.',
+                itemType: (typeMatch?.[1] || 'OTHER').toUpperCase() as 'EQUIPMENT' | 'CONSUMABLE' | 'POWER' | 'OTHER',
+                slot: (slotMatch?.[1] || '').trim().toLowerCase() || undefined,
+                bonusStat: bonusMatch ? bonusMatch[1].toLowerCase() : undefined,
+                bonusAmount: bonusMatch ? Math.max(1, Math.min(3, Math.abs(parseInt(bonusMatch[2])))) : undefined,
+                effect: (effectMatch?.[1] || '').toUpperCase() || undefined,
+            };
         } catch (e) {
             console.warn('GM pricing failed', e);
             return null;
         }
     }
 
-    /** Complete a priced custom purchase: deduct SP and record the acquisition. */
-    buyCustomRequest(request: string, price: number, remark: string): boolean {
-        if (!this.spendSp(price)) return false;
+    /**
+     * Complete a priced custom purchase: deduct SP and MATERIALIZE the grant by its classification.
+     * EQUIPMENT -> a System item in the archive (equip it from Summon Management). CONSUMABLE -> the
+     * usable-items list. POWER -> attached to the chosen summon (narrative until traits land). OTHER
+     * -> the narrative acquisitions list injected into scenes.
+     */
+    buyCustomRequest(request: string, offer: { price: number; remark: string; itemType?: string; slot?: string; bonusStat?: string; bonusAmount?: number; effect?: string }, targetActorId?: string): boolean {
+        if (!this.spendSp(offer.price)) return false;
         const save = this.getSave();
-        if (!save.gmPurchases) save.gmPurchases = [];
-        save.gmPurchases.push({ request, price, remark });
+        const type = offer.itemType || 'OTHER';
+        if (type === 'EQUIPMENT') {
+            const slot = (EQUIP_SLOTS as string[]).includes(offer.slot || '') ? offer.slot! : EquipSlot.ACCESSORY;
+            const item: EquipmentItem = {
+                id: generateUuid(), name: request, description: offer.remark, slot,
+                kind: 'system', durability: SYSTEM_MAX_DURABILITY, maxDurability: SYSTEM_MAX_DURABILITY,
+                bonuses: (offer.bonusStat && offer.bonusAmount) ? { [offer.bonusStat]: offer.bonusAmount } : undefined,
+            };
+            this.getEquipmentArchive().push(item);
+        } else if (type === 'CONSUMABLE') {
+            if (!save.consumables) save.consumables = [];
+            save.consumables.push({ id: generateUuid(), name: request, effect: offer.effect || 'NONE', remark: offer.remark });
+        } else if (type === 'POWER' && targetActorId && save.actors[targetActorId]) {
+            const actor = save.actors[targetActorId];
+            if (!actor.purchasedPowers) actor.purchasedPowers = [];
+            actor.purchasedPowers.push(request);
+        } else {
+            if (!save.gmPurchases) save.gmPurchases = [];
+            save.gmPurchases.push({ request, price: offer.price, remark: offer.remark });
+        }
         this.saveGame();
         return true;
     }

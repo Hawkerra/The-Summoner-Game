@@ -2,7 +2,7 @@ import { Emotion, EMOTION_PROMPTS, EmotionPack } from "./Emotion";
 import { Module } from "../Module";
 import { SaveType, Stage } from "../Stage";
 import { v4 as generateUuid } from 'uuid';
-import { EquipmentItem, EquipSlot, createTemporaryItem } from '../Equipment';
+import { EquipmentItem, EquipSlot, createTemporaryItem, isNoneish } from '../Equipment';
 import { AspectRatio } from "@chub-ai/stages-ts";
 import { FlashOn, Forum, 
     FitnessCenter, Construction, Lightbulb, 
@@ -85,6 +85,7 @@ class Actor {
     locationId: string = ''; // If this is a module ID, the actor is currently present in that module; if it is a faction ID, the actor is temporarily located offstation with that faction
     recoveryUntilTurn?: number; // If set, this summon was defeated and is recovering in the void until this elapsed-turn count; can't be made active until then.
     equipped: { [slot: string]: EquipmentItem } = {}; // Slot-based equipment: the NARRATIVE source of truth for what they wear/hold. The LLM reads clothing from here, never from outfits.
+    purchasedPowers?: string[]; // Powers/skills bought from the Game Master for this summon (narrative until the traits system lands).
     factionId: string = ''; // If this actor belongs to a faction, the ID of that faction; '' is the PARC or independent
     avatarImageUrl: string;
     // 'patient' indicates an echo origin, 'faction' indicates a someone generated as a faction representative, 'aide' is the station aide, and 'emergent' is a character generated as a result of narrative activity.
@@ -147,6 +148,7 @@ class Actor {
             actor.roleProficiency = {};
         }
         if (!actor.equipped) actor.equipped = {};
+        if (!actor.purchasedPowers) actor.purchasedPowers = [];
         // Backfill any capability stat missing from an older save (e.g. Reflex, added in the
         // rank-spine pass) so stat rows and derived Health never read undefined.
         if (actor.stats) {
@@ -548,6 +550,7 @@ export async function loadReserveActor(data: any, stage: Stage, includeHistory: 
                 `OUTFIT_LEGS: What they arrive wearing on their legs, same format\n` +
                 `OUTFIT_FEET: What they arrive wearing on their feet, same format\n` +
                 `OUTFIT_HELD: A single item they arrive holding or carrying, same format, or \"None\" (most people arrive holding nothing)\n` +
+                `OUTFIT_UNDERWEAR: What they arrive wearing as undergarments, same format, or \"None\"\n` +
                 `NAME: Their simple name\n` +
                 `VOICE: Output the specific voice ID from the Available Voices section that best matches the character's apparent gender (foremost) and personality.\n` +
                 `COLOR: A hex color that reflects the character's theme or mood—use darker or richer colors that will contrast with white text.\n` +
@@ -568,6 +571,7 @@ export async function loadReserveActor(data: any, stage: Stage, includeHistory: 
                 `OUTFIT_LEGS: Dark cargo pants | Practical and scuffed at the knees\n` +
                 `OUTFIT_FEET: Combat boots | Broken-in black boots, laced tight\n` +
                 `OUTFIT_HELD: None\n` +
+                `OUTFIT_UNDERWEAR: Plain cotton set | Simple, practical underwear\n` +
                 `NAME: Jane Doe\n` +
                 `VOICE: 03a438b7-ebfa-4f72-9061-f086d8f1fca6\n` +
                 `COLOR: #333333\n` +
@@ -704,12 +708,14 @@ export async function loadReserveActor(data: any, stage: Stage, includeHistory: 
         ['outfit_legs', EquipSlot.LEGS],
         ['outfit_feet', EquipSlot.FEET],
         ['outfit_held', EquipSlot.RIGHT_HAND],
+        ['outfit_underwear', EquipSlot.UNDERWEAR],
     ];
     for (const [key, slot] of outfitSlots) {
         const raw = (parsedData[key] || '').trim();
-        if (!raw || /^none\.?$/i.test(raw)) continue;
+        if (isNoneish(raw)) continue;
         const [name, desc] = raw.split('|').map((p: string) => p.trim());
-        if (!name) continue;
+        // "None" must never become an actual item - an empty slot is empty.
+        if (!name || name.length < 2 || isNoneish(name)) continue;
         newActor.equipped[slot] = createTemporaryItem(name, desc || '', slot);
     }
 

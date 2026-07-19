@@ -20,7 +20,7 @@ export enum SkitType {
 }
 
 export interface Outcome {
-    type: 'actorStat' | 'stationStat' | 'roleChange' | 'factionChange' | 'factionReputation' | 'newModule' | 'newOutfit' | 'movement' | 'newActor' | 'towerActivity';
+    type: 'actorStat' | 'stationStat' | 'roleChange' | 'factionChange' | 'factionReputation' | 'newModule' | 'newOutfit' | 'movement' | 'newActor' | 'towerActivity' | 'equipGain' | 'equipLoss' | 'equipDamage';
     actorId?: string; // Required for actorStat, roleChange, factionChange, newOutfit, movement, and towerActivity
     stat?: Stat | StationStat; // Required for actorStat
     amount?: number; // Required for actorStat
@@ -33,6 +33,7 @@ export interface Outcome {
     activityLine?: string; // Required for towerActivity: the single-sentence activity description
     activityStat?: StationStat; // Optional for towerActivity: a tower stat nudged by the activity
     activityAmount?: number; // Optional for towerActivity: +1 or -1 (clamped in code)
+    equip?: { slot: string; itemName?: string; itemDescription?: string; amount?: number }; // Required for equipGain (slot+itemName), equipLoss (slot), equipDamage (slot+amount)
 }
 
 export interface ScriptEntry {
@@ -691,6 +692,7 @@ export function buildSkitPrompt(skit: SkitData, stage: Stage, historyLength: num
             const otherOutfits = actor.outfits.filter(o => o.id !== currentOutfitId && o.emotionPack['neutral']);
             return `  ${actor.name}\n    Description: ${actor.getDescription()}\n` +
                 `    Wearing/holding: ${formatEquipmentLine(actor.equipped)}\n` +
+                ((actor.purchasedPowers?.length) ? `    Granted powers (purchased from the Game Master; these are real): ${actor.purchasedPowers.join('; ')}\n` : '') +
                 `    Profile: ${actor.profile}\n    Character Arc: ${actor.characterArc || 'Undetermined'}\n    Days at the Spire: ${save.day - birthDay}\n` +
                 (roleModule ? `    Role: ${roleModule.getAttribute('role') || 'Resident'} (${actor.heldRoles[roleModule.getAttribute('role') || 'Resident'] || 0} days)\n` : '') +
                 `    Role Description: ${roleModule?.getAttribute('roleDescription') || 'This character has no assigned role at the Spire. They are to focus upon their own needs.'}\n` +
@@ -725,6 +727,16 @@ function buildOutcomeTagRules(exampleActor: string): string {return `\n#Characte
                             `[BONUS: 4x] is reserved for the seriously significant: the completion of a quest, or the positive resolution of an ongoing storyline.\n` +
                             `Most scenes warrant NO bonus tag at all - ordinary conversation, routine activity, and partial progress earn nothing; omit the tag entirely in those cases. ` +
                             `A bonus, once earned, is locked in for the skit: never output a lower bonus than one already present in the script; a higher one may replace it if later events justify it.\n` +
+
+                            `\n#Equipment Changes:#\n` +
+                            `The Wearing/holding slot list given for each character is LAW: it is the complete and authoritative truth of what they wear and hold. An empty or missing slot means NOTHING is there - no torso item means topless, no legs item means bottomless, no feet item means barefoot, no underwear means none. NEVER invent, assume, or narrate clothing that is not in the slot list. Valid slots: head, torso, underwear, hands, legs, feet, left hand, right hand, accessory. When the scene shows a character gaining, losing, or damaging an item of clothing, a weapon, or a held object, output the matching tag:\n` +
+                            `[EQUIP: <characterName> | <slot> | <item name> | <very brief description>] when they put on, pick up, or acquire an item.\n` +
+                            `[UNEQUIP: <characterName> | <slot>] when they take off, drop, hand away, or otherwise stop wearing/holding whatever occupies that slot.\n` +
+                            `[DAMAGE: <characterName> | <slot> | <1-3>] when the item in that slot is damaged, torn, or degraded by events; 1 for light wear, 3 for severe damage.\n` +
+                            `Only tag genuine, clearly-depicted changes - do not tag items merely mentioned or admired. Full examples:\n` +
+                            `[EQUIP: Jane Doe | torso | Borrowed hoodie | An oversized gray hoodie, sleeves too long]\n` +
+                            `[UNEQUIP: Jane Doe | feet]\n` +
+                            `[DAMAGE: Jane Doe | torso | 1]\n` +
 
                             `\n#Tower Activity:#\n` +
                             `Separately, report on ONE resident of the Spire (or the tower's bound spirit) who did NOT appear in this scene, describing something they got up to elsewhere in the tower this turn. ` +
@@ -841,6 +853,38 @@ function parseOutcomeTag(text: string, stage: Stage, skit: SkitData): Outcome[] 
         const live = stage.getSave().currentSkit;
         if (live) live.spMultiplier = Math.max(live.spMultiplier || 1, mult);
         return []; // Recognized and consumed; the effect is the flag itself, no outcome objects.
+    }
+
+    // Equipment tags: [EQUIP: name | slot | item | desc], [UNEQUIP: name | slot], [DAMAGE: name | slot | n]
+    const VALID_SLOTS = ['head', 'torso', 'hands', 'legs', 'feet', 'left hand', 'right hand', 'accessory', 'underwear'];
+    const normalizeSlot = (raw: string): string | null => {
+        const slot = (raw || '').toLowerCase().trim();
+        if (VALID_SLOTS.includes(slot)) return slot;
+        if (slot === 'held' || slot === 'weapon' || slot === 'hand') return 'right hand';
+        if (slot === 'body' || slot === 'chest' || slot === 'shirt') return 'torso';
+        if (slot === 'shoes' || slot === 'boots') return 'feet';
+        if (slot === 'pants') return 'legs';
+        if (slot === 'bra' || slot === 'panties' || slot === 'undergarments' || slot === 'underclothes') return 'underwear';
+        return null;
+    };
+    const equipMatch = /^(EQUIP|UNEQUIP|DAMAGE):\s*([^|]+)\|\s*([^|\]]+?)\s*(?:\|\s*([^|\]]+?)\s*)?(?:\|\s*([^\]]+?)\s*)?$/i.exec(text);
+    if (equipMatch) {
+        const verb = equipMatch[1].toUpperCase();
+        const characterName = (equipMatch[2] || '').trim();
+        const slot = normalizeSlot(equipMatch[3]);
+        const matchedActor = findBestNameMatch(characterName, availableActors);
+        if (!matchedActor || !slot) return [];
+        if (verb === 'EQUIP') {
+            const itemName = (equipMatch[4] || '').trim();
+            if (!itemName) return [];
+            return [{ type: 'equipGain', actorId: matchedActor.id, equip: { slot, itemName, itemDescription: (equipMatch[5] || '').trim() } }];
+        }
+        if (verb === 'UNEQUIP') {
+            return [{ type: 'equipLoss', actorId: matchedActor.id, equip: { slot } }];
+        }
+        // DAMAGE: amount arrives in group 4
+        const amount = Math.max(1, Math.min(3, parseInt(equipMatch[4] || '1') || 1));
+        return [{ type: 'equipDamage', actorId: matchedActor.id, equip: { slot, amount } }];
     }
 
     // Tower Activity: [ACTIVITY: Name | sentence | STAT +1/-1  OR  "No stat change" (REQUIRED tag)]
