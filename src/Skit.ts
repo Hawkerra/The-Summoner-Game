@@ -710,15 +710,6 @@ function buildOutcomeTagRules(exampleActor: string): string {return `\n#Characte
                             `[${exampleActor}: brawn +1, charm +2]\n` +
                             `[${exampleActor}: lust -1]\n` +
 
-                            `\n#Tower Stat Changes:#\n` +
-                            `Identify any changes to the Spire's tower stats implied or indicated by each entry. Ignore lines from the entry that simply illustrate the current stats, ` +
-                            `and instead focus on changes or developments in the Spire's situation or operations. For each change, output a line in the following format:\n` +
-                            `[STATION: <stat> +<value>(, ...)]` +
-                            `Where <stat> is the name of the tower stat to be changed, and <value> is the amount to increase or decrease the stat by (positive or negative). ` +
-                            `Multiple stat changes can be included in a single tag, separated by commas.` +
-                            `Full Examples:\n` +
-                            `[STATION: Arcanum +2, Comfort +1]\n` +
-                            `[STATION: Security -1]\n` +
 
                             `\n#SP Bonus:#\n` +
                             `Judge whether the scene so far contains a genuinely significant accomplishment by the Summoner. If - and ONLY if - one is present, output a single bonus tag:\n` +
@@ -737,53 +728,6 @@ function buildOutcomeTagRules(exampleActor: string): string {return `\n#Characte
                             `[EQUIP: Jane Doe | torso | Borrowed hoodie | An oversized gray hoodie, sleeves too long]\n` +
                             `[UNEQUIP: Jane Doe | feet]\n` +
                             `[DAMAGE: Jane Doe | torso | 1]\n` +
-
-                            `\n#Tower Activity:#\n` +
-                            `Separately, report on ONE resident of the Spire (or the tower's bound spirit) who did NOT appear in this scene, describing something they got up to elsewhere in the tower this turn. ` +
-                            `The subject MUST be either a current resident of the tower itself or the tower's bound spirit - NEVER a visiting faction representative, a member of an outside faction, or anyone away from the Spire. ` +
-                            `Choose a resident from the roster who was absent from the scene; favor someone with an assigned role, and let their personality and role shape what they did. ` +
-                            `Output EXACTLY ONE line in this exact format:\n` +
-                            `[ACTIVITY: <characterName> | <a single short sentence, no more than about 20 words> | <TAG>]\n` +
-                            `The <TAG> field is REQUIRED and must be one of: a single tower stat (Arcanum, Comfort, Provision, Security, Harmony, or Wealth) nudged by exactly +1 or -1, OR the literal text "No stat change". ` +
-                            `MOST activities should use "No stat change" - only OCCASIONALLY, when the activity clearly and notably helped or harmed the tower, use a stat change instead. It should feel like an occasional surprise, not routine. ` +
-                            `Do NOT begin the sentence with a number or digit. Keep the sentence to a single line - never a paragraph. Only ONE [ACTIVITY] tag total.\n` +
-                            `Full Examples:\n` +
-                            `[ACTIVITY: Mara | Spent the afternoon reorganizing the apothecary shelves, muttering about everyone's poor labeling. | Comfort +1]\n` +
-                            `[ACTIVITY: Silas | Was found asleep in the Great Hall again, having missed his own watch shift. | Security -1]\n` +
-                            `[ACTIVITY: Wren | Practiced summoning-circle calligraphy for hours, purely for the joy of it. | No stat change]\n` +
-
-                            `\n#Faction Reputation Changes:#\n` +
-                            `Identify any changes to the Spire's reputation with factions implied by each entry. For each change, output a line in the following format:\n` +
-                            `[FACTION: <factionName> +<value>]\n` +
-                            `Where <factionName> is the name of the faction with whom the Spire's reputation is changing, and <value> is the amount to increase or decrease the reputation by (positive or negative). ` +
-                            `Reputation is a value between 1 and 10, representing the faction's opinion of the Spire, and changes are incremental. If the faction is cutting ties with the Spire, provide a large negative value. ` +
-                            `Multiple faction tags can be provided in the output if, for instance, improving in the esteem of one faction inherently reduces the opinion of a rival.` +
-                            `Full Examples:\n` +
-                            `[FACTION: Stellar Concord +1]\n` +
-                            `[FACTION: Shadow Syndicate -2]\n` +
-
-                            `\n#Character Faction Change:#\n` +
-                            `If a character has changed faction affiliations in an entry, output a line in the following format:\n` +
-                            `[CHARACTER NAME: JOINED <factionName or SPIRE>]\n` +
-                            `Where <factionName or SPIRE> is the name of the faction the character has joined, or "SPIRE" if they have left a faction to join the tower itself. ` +
-                            `Full Examples:\n` +
-                            `[${exampleActor}: JOINED Stellar Concord]\n` +
-                            `[${exampleActor}: JOINED SPIRE]` +
-                            `\n\nThis tag indicates an official change in allegiance/affiliation/ownership/possession of the named character. ` +
-                            `Consider this tag when the script depicts: ` +
-                            `\n - A resident taking a permanent position with a faction.` +
-                            `\n - A faction representative defecting to the Spire.` +
-                            `\n - A character being formally recruited or dismissed.` +
-                            `\n - A character being sold to or imprisoned by a faction.\n` +
-
-                            `\n#Character Role Change:#\n` +
-                            `If a character's role in the tower changes as a result of this entry (e.g., a resident has been assigned to a staff position), output a line in the following format:\n` +
-                            `[CHARACTER NAME: ROLE <roleName>]\n` +
-                            `Where <roleName> is the name of the new role assigned to the character. ` +
-                            `Full Example:\n` +
-                            `[${exampleActor}: ROLE Herald]\n` +
-                            `[${exampleActor}: ROLE None]\n` +
-                            `The role name must directly match an existing role defined by the tower's current rooms (or "None," if a character's role is being removed by this tag).\n` +
 
                             `\n#Character Movement/Departure:#\n` +
                             `If the content depicts or implies that a character has departed the Spire or moved to a different faction (or such departure appears imminent), include final movement tags here.` +
@@ -842,6 +786,11 @@ function parseOutcomeTag(text: string, stage: Stage, skit: SkitData): Outcome[] 
     const availableActors: Actor[] = Object.values(stage.getSave().actors);
 
     if (!text) return null;
+
+    // Discard dead-system tower/faction tags the LLM may still emit out of habit (STATION/tower
+    // stats, ACTIVITY/tower activity, FACTION reputation). The game has no modules, station stats,
+    // or factions - these outcomes must never apply. Silently drop them.
+    if (/^\s*(STATION|ACTIVITY|FACTION)\s*:/i.test(text)) return [];
 
     // SP Bonus multiplier: [BONUS: 2x] (also accepts x2 / bare 2). Ratchets up only, never down,
     // and locks for the rest of the skit. Written through to the PERSISTENT currentSkit because

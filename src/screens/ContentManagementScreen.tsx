@@ -2,10 +2,9 @@ import React, { FC, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Stage } from '../Stage';
 import Actor, { getRole } from '../actors/Actor';
-import Faction from '../factions/Faction';
-import { ModuleIntrinsic } from '../Module';
+import { GameLocation } from '../Location';
 import { GlassPanel, Title, Button } from '../components/UIComponents';
-import { Close, Person, Groups, Domain } from '@mui/icons-material';
+import { Close, Person, Place } from '@mui/icons-material';
 import { ActorDetailScreen } from './ActorDetailScreen';
 
 
@@ -14,39 +13,46 @@ interface ContentManagementScreenProps {
     onClose: () => void;
 }
 
-type TabType = 'actors' | 'factions' | 'modules';
+type TabType = 'actors' | 'locations';
 
 export const ContentManagementScreen: FC<ContentManagementScreenProps> = ({ stage, onClose }) => {
     const [activeTab, setActiveTab] = useState<TabType>('actors');
     const [selectedActor, setSelectedActor] = useState<Actor | null>(null);
-    const [selectedFaction, setSelectedFaction] = useState<Faction | null>(null);
-    const [selectedModuleId, setSelectedModuleId] = useState<string | null>(null);
+    const [editingLocationId, setEditingLocationId] = useState<string | null>(null);
+    const [editName, setEditName] = useState('');
+    const [editDescription, setEditDescription] = useState('');
+    const [, setRefreshKey] = useState(0);
+    const refresh = () => setRefreshKey(k => k + 1);
 
     // Get all actors from the save
     const actors = Object.values(stage().getSave().actors);
-    
-    // Get all factions from the save
-    const factions = Object.values(stage().getSave().factions);
 
-    // Get all custom modules from the save
-    const customModules = Object.entries(stage().getSave().customModules || {});
+    // Get all locations from the save (Home first, then the rest; archived shown but marked).
+    const locations = Object.values(stage().getLocations()) as GameLocation[];
 
     const handleActorClick = (actor: Actor) => {
         setSelectedActor(actor);
     };
 
-    const handleFactionClick = (faction: Faction) => {
-        setSelectedFaction(faction);
+    const beginEditLocation = (loc: GameLocation) => {
+        setEditingLocationId(loc.id);
+        setEditName(loc.name);
+        setEditDescription(loc.description);
     };
 
-    const handleModuleClick = (moduleId: string) => {
-        setSelectedModuleId(moduleId);
+    const saveLocationEdit = () => {
+        const loc = stage().getLocations()[editingLocationId || ''];
+        if (loc) {
+            loc.name = editName.trim() || loc.name;
+            loc.description = editDescription.trim();
+            stage().saveGame();
+        }
+        setEditingLocationId(null);
+        refresh();
     };
 
     const handleCloseDetail = () => {
         setSelectedActor(null);
-        setSelectedFaction(null);
-        setSelectedModuleId(null);
     };
 
     return (
@@ -152,30 +158,17 @@ export const ContentManagementScreen: FC<ContentManagementScreenProps> = ({ stag
                                     Actors ({actors.length})
                                 </Button>
                                 <Button
-                                    onClick={() => setActiveTab('factions')}
-                                    variant={activeTab === 'factions' ? 'primary' : 'secondary'}
+                                    onClick={() => setActiveTab('locations')}
+                                    variant={activeTab === 'locations' ? 'primary' : 'secondary'}
                                     style={{
                                         display: 'flex',
                                         alignItems: 'center',
                                         gap: '8px',
-                                        opacity: activeTab === 'factions' ? 1 : 0.6,
+                                        opacity: activeTab === 'locations' ? 1 : 0.6,
                                     }}
                                 >
-                                    <Groups />
-                                    Factions ({factions.length})
-                                </Button>
-                                <Button
-                                    onClick={() => setActiveTab('modules')}
-                                    variant={activeTab === 'modules' ? 'primary' : 'secondary'}
-                                    style={{
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        gap: '8px',
-                                        opacity: activeTab === 'modules' ? 1 : 0.6,
-                                    }}
-                                >
-                                    <Domain />
-                                    Modules ({customModules.length})
+                                    <Place />
+                                    Locations ({locations.length})
                                 </Button>
                             </div>
 
@@ -283,14 +276,15 @@ export const ContentManagementScreen: FC<ContentManagementScreenProps> = ({ stag
                                 )}
 
                                 {/* Factions Tab */}
-                                {activeTab === 'factions' && (
+                                {/* Locations Tab - view and edit existing locations */}
+                                {activeTab === 'locations' && (
                                     <div style={{
                                         display: 'grid',
-                                        gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))',
+                                        gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
                                         gap: '15px',
                                         padding: '10px',
                                     }}>
-                                        {factions.length === 0 ? (
+                                        {locations.length === 0 ? (
                                             <div style={{
                                                 gridColumn: '1 / -1',
                                                 textAlign: 'center',
@@ -298,199 +292,38 @@ export const ContentManagementScreen: FC<ContentManagementScreenProps> = ({ stag
                                                 color: 'rgba(224, 240, 255, 0.6)',
                                                 fontSize: '16px',
                                             }}>
-                                                No factions found in the current save.
+                                                No locations yet.
                                             </div>
                                         ) : (
-                                            factions.map(faction => {
-                                                const representative = faction.representativeId 
-                                                    ? stage().getSave().actors[faction.representativeId]
-                                                    : null;
-                                                
-                                                return (
-                                                    <motion.div
-                                                        key={faction.id}
-                                                        whileHover={{ scale: 1.05, y: -5 }}
-                                                        whileTap={{ scale: 0.95 }}
-                                                        onClick={() => handleFactionClick(faction)}
-                                                        style={{
-                                                            cursor: 'pointer',
-                                                            backgroundColor: 'rgba(18, 8, 32, 0.6)',
-                                                            border: '2px solid rgba(176, 102, 255, 0.3)',
-                                                            borderRadius: '8px',
-                                                            padding: '15px',
-                                                            display: 'flex',
-                                                            flexDirection: 'column',
-                                                            gap: '10px',
-                                                            transition: 'border-color 0.2s',
-                                                            minHeight: '200px',
-                                                        }}
-                                                        onMouseEnter={(e) => {
-                                                            e.currentTarget.style.borderColor = 'rgba(176, 102, 255, 0.6)';
-                                                        }}
-                                                        onMouseLeave={(e) => {
-                                                            e.currentTarget.style.borderColor = 'rgba(176, 102, 255, 0.3)';
-                                                        }}
-                                                    >
-                                                        {/* Faction Background */}
-                                                        {faction.backgroundImageUrl && (
-                                                            <div
-                                                                style={{
-                                                                    width: '100%',
-                                                                    height: '100px',
-                                                                    borderRadius: '5px',
-                                                                    backgroundColor: 'rgba(18, 8, 32, 0.8)',
-                                                                    border: `2px solid ${faction.themeColor}`,
-                                                                    backgroundImage: `url(${faction.backgroundImageUrl})`,
-                                                                    backgroundSize: 'cover',
-                                                                    backgroundPosition: 'center',
-                                                                }}
-                                                            />
-                                                        )}
-                                                        
-                                                        {/* Faction Name */}
-                                                        <div
-                                                            style={{
-                                                                color: faction.themeColor,
-                                                                fontSize: '18px',
-                                                                fontWeight: 'bold',
-                                                                textAlign: 'center',
-                                                                fontFamily: faction.themeFont,
-                                                            }}
-                                                        >
-                                                            {faction.name}
-                                                        </div>
-                                                        
-                                                        {/* Faction Status */}
-                                                        <div style={{
-                                                            display: 'flex',
-                                                            justifyContent: 'space-between',
-                                                            fontSize: '12px',
-                                                            color: 'rgba(224, 240, 255, 0.6)',
-                                                        }}>
-                                                            <span>Reputation: {faction.reputation}/10</span>
-                                                            <span style={{ 
-                                                                color: faction.active ? '#b066ff' : '#ff5555' 
-                                                            }}>
-                                                                {faction.active ? 'Active' : 'Inactive'}
-                                                            </span>
-                                                        </div>
-                                                        
-                                                        {/* Representative */}
-                                                        {representative && (
-                                                            <div style={{
-                                                                fontSize: '12px',
-                                                                color: 'rgba(224, 240, 255, 0.7)',
-                                                                textAlign: 'center',
-                                                            }}>
-                                                                Rep: {representative.name}
-                                                            </div>
-                                                        )}
-                                                    </motion.div>
-                                                );
-                                            })
-                                        )}
-                                    </div>
-                                )}
-
-                                {/* Modules Tab */}
-                                {activeTab === 'modules' && (
-                                    <div style={{
-                                        display: 'grid',
-                                        gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
-                                        gap: '15px',
-                                        padding: '10px',
-                                    }}>
-                                        {customModules.length === 0 ? (
-                                            <div style={{
-                                                gridColumn: '1 / -1',
-                                                textAlign: 'center',
-                                                padding: '40px',
-                                                color: 'rgba(224, 240, 255, 0.6)',
-                                                fontSize: '16px',
-                                            }}>
-                                                No custom modules found in the current save.
-                                            </div>
-                                        ) : (
-                                            customModules.map(([moduleId, module]) => {
-                                                const moduleIntrinsic = module as ModuleIntrinsic;
-                                                return (
-                                                    <motion.div
-                                                        key={moduleId}
-                                                        whileHover={{ scale: 1.05, y: -5 }}
-                                                        whileTap={{ scale: 0.95 }}
-                                                        onClick={() => handleModuleClick(moduleId)}
-                                                        style={{
-                                                            cursor: 'pointer',
-                                                            backgroundColor: 'rgba(18, 8, 32, 0.6)',
-                                                            border: '2px solid rgba(176, 102, 255, 0.3)',
-                                                            borderRadius: '8px',
-                                                            padding: '15px',
-                                                            display: 'flex',
-                                                            flexDirection: 'column',
-                                                            gap: '10px',
-                                                            transition: 'border-color 0.2s',
-                                                            minHeight: '220px',
-                                                        }}
-                                                        onMouseEnter={(e) => {
-                                                            e.currentTarget.style.borderColor = 'rgba(176, 102, 255, 0.6)';
-                                                        }}
-                                                        onMouseLeave={(e) => {
-                                                            e.currentTarget.style.borderColor = 'rgba(176, 102, 255, 0.3)';
-                                                        }}
-                                                    >
-                                                        {moduleIntrinsic.defaultImageUrl && (
-                                                            <div
-                                                                style={{
-                                                                    width: '100%',
-                                                                    height: '110px',
-                                                                    borderRadius: '5px',
-                                                                    backgroundColor: 'rgba(18, 8, 32, 0.8)',
-                                                                    border: '2px solid rgba(176, 102, 255, 0.35)',
-                                                                    backgroundImage: `url(${moduleIntrinsic.defaultImageUrl})`,
-                                                                    backgroundSize: 'cover',
-                                                                    backgroundPosition: 'center',
-                                                                }}
-                                                            />
-                                                        )}
-
-                                                        <div
-                                                            style={{
-                                                                color: '#b066ff',
-                                                                fontSize: '18px',
-                                                                fontWeight: 'bold',
-                                                                textAlign: 'center',
-                                                            }}
-                                                        >
-                                                            {moduleIntrinsic.name || moduleId}
-                                                        </div>
-
-                                                        <div
-                                                            style={{
-                                                                color: 'rgba(224, 240, 255, 0.75)',
-                                                                fontSize: '12px',
-                                                                textAlign: 'center',
-                                                                lineHeight: 1.4,
-                                                            }}
-                                                        >
-                                                            {moduleIntrinsic.role
-                                                                ? `${moduleIntrinsic.role}: ${moduleIntrinsic.roleDescription || 'No role description.'}`
-                                                                : (moduleIntrinsic.skitPrompt || 'No module details yet.')}
-                                                        </div>
-
-                                                        <div
-                                                            style={{
-                                                                marginTop: 'auto',
-                                                                color: 'rgba(224, 240, 255, 0.5)',
-                                                                fontSize: '11px',
-                                                                textAlign: 'center',
-                                                                fontFamily: 'monospace',
-                                                            }}
-                                                        >
-                                                            {moduleId}
-                                                        </div>
-                                                    </motion.div>
-                                                );
-                                            })
+                                            locations.map((loc) => (
+                                                <motion.div
+                                                    key={loc.id}
+                                                    whileHover={{ scale: 1.02 }}
+                                                    style={{
+                                                        background: 'rgba(20, 12, 32, 0.6)',
+                                                        border: '1px solid rgba(176, 102, 255, 0.3)',
+                                                        borderRadius: '12px',
+                                                        padding: '16px',
+                                                        display: 'flex',
+                                                        flexDirection: 'column',
+                                                        gap: '8px',
+                                                        opacity: loc.archived ? 0.6 : 1,
+                                                    }}
+                                                >
+                                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                                                        <span style={{ color: '#b066ff', fontSize: '16px', fontWeight: 'bold' }}>
+                                                            {loc.name}{loc.isHome ? ' ⌂' : ''}
+                                                        </span>
+                                                        {loc.archived && <span style={{ fontSize: '11px', opacity: 0.7 }}>archived</span>}
+                                                    </div>
+                                                    <div style={{ color: 'rgba(224, 240, 255, 0.75)', fontSize: '13px', lineHeight: 1.4 }}>
+                                                        {loc.description || 'No description.'}
+                                                    </div>
+                                                    <Button onClick={() => beginEditLocation(loc)} style={{ marginTop: 'auto', alignSelf: 'flex-start' }}>
+                                                        Edit
+                                                    </Button>
+                                                </motion.div>
+                                            ))
                                         )}
                                     </div>
                                 )}
@@ -509,9 +342,49 @@ export const ContentManagementScreen: FC<ContentManagementScreenProps> = ({ stag
                 />
             )}
 
-            {/* Faction/Module detail modals removed in the strip; these systems are
-                discarded for The Summoner Game. Any remaining faction/module state here is
-                condemned scaffolding to be cleaned up alongside the Stage.tsx conversion. */}
+            {/* Location Edit Modal */}
+            {editingLocationId && (
+                <div style={{
+                    position: 'fixed', inset: 0, zIndex: 1000, display: 'flex', alignItems: 'center',
+                    justifyContent: 'center', background: 'rgba(0,0,0,0.6)', padding: '20px',
+                }}>
+                    <div style={{
+                        width: 'min(520px, 92vw)', background: 'rgba(14, 9, 24, 0.98)',
+                        border: '1px solid rgba(176, 102, 255, 0.5)', borderRadius: '14px', padding: '20px',
+                        boxShadow: '0 12px 40px rgba(0,0,0,0.6)',
+                    }}>
+                        <h2 style={{ color: '#b066ff', fontSize: '18px', fontWeight: 'bold', marginBottom: '14px' }}>Edit Location</h2>
+                        <label style={{ fontSize: '12px', opacity: 0.7, display: 'block', marginBottom: '4px' }}>Name</label>
+                        <input
+                            value={editName}
+                            onChange={e => setEditName(e.target.value)}
+                            style={{
+                                width: '100%', padding: '8px 10px', borderRadius: '8px', marginBottom: '14px',
+                                background: 'rgba(11,7,18,0.8)', color: 'inherit',
+                                border: '1px solid rgba(176,102,255,0.35)', boxSizing: 'border-box', fontSize: '14px',
+                            }}
+                        />
+                        <label style={{ fontSize: '12px', opacity: 0.7, display: 'block', marginBottom: '4px' }}>Description</label>
+                        <textarea
+                            value={editDescription}
+                            onChange={e => setEditDescription(e.target.value)}
+                            rows={5}
+                            style={{
+                                width: '100%', padding: '8px 10px', borderRadius: '8px', marginBottom: '8px',
+                                background: 'rgba(11,7,18,0.8)', color: 'inherit', resize: 'vertical',
+                                border: '1px solid rgba(176,102,255,0.35)', boxSizing: 'border-box', fontSize: '14px', lineHeight: 1.4,
+                            }}
+                        />
+                        <div style={{ fontSize: '11px', opacity: 0.55, marginBottom: '14px' }}>
+                            The description shapes how scenes and backgrounds at this location are generated. Editing the name or description does not regenerate an existing background image.
+                        </div>
+                        <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+                            <Button onClick={() => setEditingLocationId(null)} variant="secondary">Cancel</Button>
+                            <Button onClick={saveLocationEdit}>Save</Button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </>
     );
 };

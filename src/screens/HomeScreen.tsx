@@ -32,6 +32,20 @@ export const HomeScreen: FC<HomeScreenProps> = ({ stage, setScreenType }) => {
         refresh();
     }, []);
 
+    // The background generates asynchronously; poll until it lands (and re-kick generation in case
+    // it hasn't started) so it appears the moment it's ready and on every entry - not only after a
+    // travel round-trip.
+    React.useEffect(() => {
+        const loc = stage().getCurrentLocation();
+        if (loc.backgroundUrl) return;
+        void stage().ensureLocationBackground(loc);
+        const interval = setInterval(() => {
+            const l = stage().getCurrentLocation();
+            if (l.backgroundUrl) { refresh(); clearInterval(interval); }
+        }, 1500);
+        return () => clearInterval(interval);
+    }, []);
+
     const locations = stage().getLocations();
     const current = stage().getCurrentLocation();
     const parent = current.parentId ? locations[current.parentId] : null;

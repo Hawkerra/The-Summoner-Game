@@ -766,61 +766,8 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
             this.getSave().actors[this.getSave().aide.actorId || ''].origin = 'aide';
         }
 
-        // Director module handling:
-        // Create default director module if missing.
-        if (!this.getSave().directorModule) {
-            this.getSave().directorModule = { ...this.freshSave.directorModule };
-        }
-
-        // Currently, if a new module doesn't complete generation before the game is closed, it will never be generated; this could catch ungenerated ones.
-        // this.generateUncreatedModules();
-        
-        const placeholderModule = {
-            name: this.getSave().directorModule.name,
-            skitPrompt: 'Private chambers are personal living spaces for the tower\'s residents. Scenes here often involve personal interactions:  revelations, troubles, interests, or relaxation.',
-            imagePrompt: 'A cozy tower bedchamber with a bed, personal storage, and warm lantern light, reflecting the occupant\'s personality.',
-            baseImageUrl: 'https://media.charhub.io/5e39db53-9d66-459d-8926-281b3b089b36/8ff20bdb-b719-4cf7-bf53-3326d6f9fcaa.png', 
-            defaultImageUrl: 'https://media.charhub.io/99ffcdf5-a01b-43cf-81e5-e7098d8058f5/d1ec2e67-9124-4b8b-82d9-9685cfb973d2.png',
-            role: this.getSave().directorModule.roleName,
-            roleDescription: '',
-            cost: {
-                Wealth: 3,
-            },
-            action: 
-                (module: Module, stage: Stage, setScreenType: (type: ScreenType) => void) => {
-                    stage.setSkit({
-                        type: SkitType.DIRECTOR_MODULE,
-                        moduleId: module.id,
-                        script: [],
-                        generating: true,
-                        context: {},
-                    });
-                    setScreenType(ScreenType.SKIT);
-                }
-        };
-
-        // No generated module; generate it now.
-        if (!this.getSave().directorModule.module) {
-            // Register placeholder:
-            registerModule('director module',
-                placeholderModule
-            );
-
-            // Kick off director module generation
-            generateModule(this.getSave().directorModule.name, this, 
-                `This is a room designed specifically around the Magus, ${this.getSave().player.name}, and their needs or tastes.\n` +
-                `About the Magus, ${this.getSave().player.name}:\n${this.getSave().player.description}`,
-                this.getSave().directorModule.roleName).then(module => {
-                    if (module) {
-                        this.getSave().directorModule.module = module;
-                        registerModule('director module', module, placeholderModule.action);
-                        this.saveGame();
-                    }
-            });
-        } else {
-            // Register existing director module
-            registerModule('director module', this.getSave().directorModule.module || placeholderModule, placeholderModule.action);
-        }
+        // (Removed: director/Magus module generation - the game no longer uses tower modules,
+        // and generating one on startup wasted an LLM + image call for a room with no UI.)
 
         if (!this.getSave().characterArtStyle) {
             this.getSave().characterArtStyle = 'original';
@@ -984,7 +931,8 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
                 generating: true,
                 context: {},
             };
-            this.setSkit(introSkit);
+            // NOTE: do NOT setSkit() the empty shell here - planting an empty, generating skit made
+            // the SkitScreen latch onto it and render blank until advanced. Build it fully, THEN commit.
             try {
                 // Generate the opening script here, during loading, so it's ready when we reach the scene.
                 const entries = await generateSkitScript(introSkit, this);
@@ -993,6 +941,7 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
                 console.warn('Intro generation failed; entering the intro scene un-generated.', e);
             } finally {
                 introSkit.generating = false;
+                introSkit.currentIndex = 0; // Start on the first section so it renders immediately (was blank until clicked twice).
                 this.getSave().currentSkit = introSkit;
                 this.saveGame();
             }
@@ -2132,9 +2081,11 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
 
             this.summaryCheck();
 
-            // SP: meaningful interaction pays. 1 SP per section, times any locked-in bonus
-            // multiplier the LLM awarded for significant accomplishments (ratchets up only, 1-4x).
-            const spBase = save.currentSkit.script?.length || 0;
+            // SP: meaningful interaction pays - but ONLY while a summon is actually active and in the
+            // scene. The intro (and any summon-less scene) earns nothing. 1 SP per section, times any
+            // locked-in bonus multiplier the LLM awarded (ratchets up only, 1-4x).
+            const summonPresent = this.getActiveSummons().length > 0 && save.currentSkit.type !== SkitType.BEGINNING;
+            const spBase = summonPresent ? (save.currentSkit.script?.length || 0) : 0;
             const spMult = Math.max(1, Math.min(4, save.currentSkit.spMultiplier || 1));
             const spEarned = spBase * spMult;
             if (spEarned > 0) {
