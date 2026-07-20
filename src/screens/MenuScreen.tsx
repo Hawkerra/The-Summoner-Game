@@ -176,9 +176,9 @@ export const MenuScreen: FC<MenuScreenProps> = ({ stage, setScreenType }) => {
                         percentages of the hand-image box. ===== */}
                     <div style={{
                         position: 'absolute',
-                        top: '17.5%', left: '22.5%', width: '43%', height: '22.2%',
+                        top: '26%', left: '21%', width: '50%', height: '50%',
                         display: 'flex', flexDirection: 'column', alignItems: 'center',
-                        gap: 'clamp(3px, 0.8vh, 8px)',
+                        gap: 'clamp(4px, 1vh, 10px)',
                     }}>
                         {/* Logo at the top of the phone, fit within the screen width */}
                         <motion.img
@@ -191,7 +191,7 @@ export const MenuScreen: FC<MenuScreenProps> = ({ stage, setScreenType }) => {
                         />
 
                         {/* Menu buttons: green button art with text overlaid */}
-                        <div style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 'clamp(2px, 0.6vh, 6px)', marginTop: 'clamp(1px, 0.5vh, 4px)' }}>
+                        <div style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 'clamp(4px, 1.2vh, 12px)', marginTop: 'clamp(2px, 0.8vh, 8px)' }}>
                             {titleButtons.map((button, index) => (
                                 <motion.button
                                     key={button.key}
@@ -205,7 +205,7 @@ export const MenuScreen: FC<MenuScreenProps> = ({ stage, setScreenType }) => {
                                     style={{
                                         position: 'relative',
                                         width: '82%',
-                                        aspectRatio: '1512 / 470',
+                                        height: 'clamp(30px, 6vh, 58px)', // explicit height (was aspectRatio 1512/470, which read too flat/squished)
                                         border: 'none', background: 'transparent', padding: 0, cursor: 'pointer',
                                         display: 'flex', alignItems: 'center', justifyContent: 'center',
                                         filter: hoveredButton === button.key ? 'brightness(1.15) drop-shadow(0 0 6px rgba(80,255,80,0.5))' : 'none',
@@ -219,6 +219,8 @@ export const MenuScreen: FC<MenuScreenProps> = ({ stage, setScreenType }) => {
                                         letterSpacing: '0.03em',
                                         textShadow: '0 1px 3px rgba(0,0,0,0.7)',
                                         whiteSpace: 'nowrap',
+                                        marginTop: '3%', // the green pill sits slightly low in the art's transparent box; nudge text to its optical center
+                                        lineHeight: 1,
                                     }}>{button.label}</span>
                                 </motion.button>
                             ))}
