@@ -154,10 +154,11 @@ export const MenuScreen: FC<MenuScreenProps> = ({ stage, setScreenType }) => {
             <div style={{ position: 'absolute', inset: 0, background: 'rgba(4,6,16,0.35)', zIndex: 0 }} />
 
             {/* The hand + phone group, gently wobbling as if held. The buttons live INSIDE this group
-                so they wobble in lockstep with the phone (they never drift relative to the bezel). */}
-            <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1 }}>
+                so they wobble in lockstep with the phone (they never drift relative to the bezel).
+                Anchored to the bottom and oversized so the wrist/arm bleeds off the bottom edge. */}
+            <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', zIndex: 1, overflow: 'hidden' }}>
                 <motion.div
-                    style={{ position: 'relative', height: 'min(92vh, 720px)', aspectRatio: '1024 / 1536' }}
+                    style={{ position: 'relative', height: 'min(135vh, 1180px)', aspectRatio: '1024 / 1536', marginBottom: '-14vh' }}
                     animate={{
                         // Very slight, slow, irregular drift + rotation - a held-hand idle, not a shake.
                         x: [0, 3, -2, 2, -3, 0],
@@ -172,11 +173,10 @@ export const MenuScreen: FC<MenuScreenProps> = ({ stage, setScreenType }) => {
                     {/* Phone screen content, positioned within the black glass of the phone.
                         ===== TUNING: these four values place the content box over the phone's screen.
                         If the logo/buttons sit too high/low or off the glass, nudge these. They are
-                        percentages of the hand-image box. Measured by eye from the reference art;
-                        expect to fine-tune once against the live render. ===== */}
+                        percentages of the hand-image box. ===== */}
                     <div style={{
                         position: 'absolute',
-                        top: '20%', left: '28%', width: '44%', height: '46%',
+                        top: '14.5%', left: '29.5%', width: '43%', height: '52%',
                         display: 'flex', flexDirection: 'column', alignItems: 'center',
                         gap: 'clamp(6px, 1.4vh, 14px)',
                     }}>
