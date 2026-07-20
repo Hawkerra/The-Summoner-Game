@@ -158,7 +158,7 @@ export const MenuScreen: FC<MenuScreenProps> = ({ stage, setScreenType }) => {
                 Anchored to the bottom and oversized so the wrist/arm bleeds off the bottom edge. */}
             <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', zIndex: 1, overflow: 'hidden' }}>
                 <motion.div
-                    style={{ position: 'relative', height: 'min(135vh, 1180px)', aspectRatio: '1024 / 1536', marginBottom: '-14vh' }}
+                    style={{ position: 'relative', height: 'min(150vh, 1320px)', aspectRatio: '1024 / 1536', marginBottom: '-16vh', marginRight: '14vw' }}
                     animate={{
                         // Very slight, slow, irregular drift + rotation - a held-hand idle, not a shake.
                         x: [0, 3, -2, 2, -3, 0],
@@ -178,7 +178,7 @@ export const MenuScreen: FC<MenuScreenProps> = ({ stage, setScreenType }) => {
                         position: 'absolute',
                         top: '14.5%', left: '29.5%', width: '43%', height: '52%',
                         display: 'flex', flexDirection: 'column', alignItems: 'center',
-                        gap: 'clamp(6px, 1.4vh, 14px)',
+                        gap: 'clamp(3px, 0.8vh, 8px)',
                     }}>
                         {/* Logo at the top of the phone, fit within the screen width */}
                         <motion.img
@@ -187,11 +187,11 @@ export const MenuScreen: FC<MenuScreenProps> = ({ stage, setScreenType }) => {
                             initial={{ opacity: 0, y: -6 }}
                             animate={{ opacity: 1, y: 0 }}
                             transition={{ duration: 0.6 }}
-                            style={{ width: '100%', maxHeight: '30%', objectFit: 'contain', pointerEvents: 'none', userSelect: 'none' }}
+                            style={{ width: '82%', maxHeight: '24%', objectFit: 'contain', pointerEvents: 'none', userSelect: 'none' }}
                         />
 
                         {/* Menu buttons: green button art with text overlaid */}
-                        <div style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 'clamp(4px, 1vh, 10px)', marginTop: 'clamp(2px, 1vh, 8px)' }}>
+                        <div style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 'clamp(2px, 0.6vh, 6px)', marginTop: 'clamp(1px, 0.5vh, 4px)' }}>
                             {titleButtons.map((button, index) => (
                                 <motion.button
                                     key={button.key}
