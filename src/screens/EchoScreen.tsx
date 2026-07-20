@@ -85,20 +85,26 @@ export const EchoScreen: FC<EchoScreenProps> = ({ stage, setScreenType }) => {
 
 	// Keep a candidate on deck: if the pool is empty, ask the app to serve one up.
 	React.useEffect(() => {
-		if (!candidate && !loading) {
+		// Don't auto-fill while curating: debugCurate makes loadReserveActors a synchronous no-op,
+		// and with refresh() in .finally() + refreshKey in deps this became an infinite render loop
+		// that froze the stage the moment the debug panel emptied the reserve.
+		if (!candidate && !loading && !stage().debugCurate) {
 			setLoading(true);
 			stage().loadReserveActors().finally(() => {
 				setLoading(false);
 				refresh();
 			});
 		}
-	}, [candidate, loading, refreshKey]);
+	}, [candidate, loading]);
 
 	// Kick the background trait pass and poll lightly: assignments land async, and without a
-	// re-render the chips would never appear on a card the player is already looking at.
+	// re-render the chips would never appear on a card the player is already looking at. Paused
+	// during debug curation (nothing to backfill, and needless refreshes churn the panel).
 	React.useEffect(() => {
+		if (stage().debugCurate) return;
 		void stage().ensureReserveTraits();
 		const interval = setInterval(() => {
+			if (stage().debugCurate) return;
 			void stage().ensureReserveTraits();
 			refresh();
 		}, 2000);
