@@ -699,9 +699,9 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
     }
 
     saveGame() {
-        if (this.currentSave.currentSkit && !this.betaMode) {
-            return; // Don't save during an active skit (except in beta mode; just trying this out first).
-        }
+        // Persist even during an active skit: currentSkit is part of the save (startGame resumes
+        // from it), and NOT saving mid-skit meant closing the game mid-scene lost everything since
+        // the last between-scenes save. The old guard was tentative ("trying this out first").
         // Update timestamp on current save
         this.currentSave.timestamp = Date.now();
         this.saves[this.saveSlot] = this.currentSave;
@@ -1591,7 +1591,11 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
             modifiedMessage: null,
             systemMessage: null,
             error: null,
-            chatState: null,
+            // Persist the current saves to the DURABLE chat state on every message. Returning null
+            // here (the old behavior) meant the primary persistence channel was never written, so
+            // messenger.updateChatState() only populated the live session - and reload read the
+            // stale/empty committed copy. This is why saves vanished on leaving the game.
+            chatState: this.buildSaves(),
         };
     }
 
@@ -1603,7 +1607,7 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
             modifiedMessage: null,
             error: null,
             systemMessage: null,
-            chatState: null
+            chatState: this.buildSaves(),
         };
     }
 
