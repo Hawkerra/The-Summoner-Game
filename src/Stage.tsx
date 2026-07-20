@@ -393,8 +393,15 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
 
     async load(): Promise<Partial<LoadResponse<InitStateType, ChatStateType, MessageStateType>>> {
 
-        // Remove saves that have no actors or layout (they didn't even initialize an aide); set those indices to undefined
-        this.saves = this.saves.map(save => (save && save.actors && Object.keys(save.actors).length > 0 && save.layout) ? save : undefined);
+        // Keep any save that actually got off the ground. The old Spire filter required non-empty
+        // `actors` AND a `layout` (the tower module grid) - both wrong here: a valid Summoner-game
+        // save can legitimately have zero actors (you saved before summoning, or desummoned
+        // everyone), and `layout` is dead tower scaffolding. Discarding on those criteria deleted
+        // real saves on load. Test the fields THIS game uses instead: a player and a locations map.
+        this.saves = this.saves.map(save =>
+            (save && save.player && save.player.name && save.locations && Object.keys(save.locations).length > 0)
+                ? save
+                : undefined);
 
         this.currentSave = this.saves[this.saveSlot] || this.getFreshSave();
 
@@ -1123,6 +1130,41 @@ export class Stage extends StageBase<InitStateType, ChatStateType, MessageStateT
             return { allowed: false, reason: 'Requires a New Summon Token (50 SP in the Shop).' };
         }
         return { allowed: true };
+    }
+
+    /**
+     * The player's CHOSEN first summon, entered as a Chub URL (or author/slug) during chargen.
+     * Distills the specific character and lands them as the first active summon - the same path a
+     * normal accept takes, minus the token cost (the first summon is always free). Returns true on
+     * success; on failure the caller proceeds with a normal random first pull.
+     */
+    async firstSummonFromUrl(input: string): Promise<boolean> {
+        const raw = (input || '').trim();
+        if (!raw) return false;
+        let fullPath = raw;
+        const m = raw.match(/chub\.ai\/characters\/([^?#\s]+)/i);
+        if (m) fullPath = m[1];
+        fullPath = fullPath.replace(/^\/+|\/+$/g, '');
+        try {
+            const actor = await loadReserveActorFromFullPath(fullPath, this);
+            if (!actor) return false;
+            await assignTraitsToActor(actor, this);
+            // Place the actor directly into the roster + actives, landed at Home. We do NOT route
+            // through acceptSummon here: that fires an INTRO_CHARACTER skit, which startGame's
+            // BEGINNING intro (generated right after chargen) would collide with / overwrite. Instead
+            // the summon is simply PRESENT when the opening scene plays.
+            const save = this.getSave();
+            save.actors[actor.id] = actor;
+            save.reserveActors = (save.reserveActors || []).filter(a => a.id !== actor.id);
+            actor.locationId = HOME_LOCATION_ID;
+            const activeIds = this.getActiveIds();
+            if (!activeIds.includes(actor.id)) activeIds.push(actor.id);
+            this.saveGame();
+            return true;
+        } catch (e) {
+            console.warn('[chargen] first-summon URL distill failed', e);
+            return false;
+        }
     }
 
     acceptSummon(actor: Actor): string {

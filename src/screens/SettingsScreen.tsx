@@ -15,6 +15,7 @@ interface SettingsScreenProps {
 interface SettingsData {
     playerName: string;
     playerDescription: string;
+    firstSummonUrl: string; // Optional: Chub URL for the player's chosen first summon (new game only).
     cityName: string;
     worldDetails: string;
     disableTextToSpeech: boolean;
@@ -135,6 +136,7 @@ export const SettingsScreen: FC<SettingsScreenProps> = ({ stage, onCancel, onCon
     // Load existing settings or use defaults
     const [settings, setSettings] = useState<SettingsData>({
         playerName: saveFromStage.player?.name || 'You',
+        firstSummonUrl: '',
         playerDescription: saveFromStage.player?.description || 'The Spire\'s accidental Magus is the tower\'s sole living authority.',
         cityName: saveFromStage.cityName || '',
         worldDetails: saveFromStage.worldDetails || '',
@@ -159,7 +161,7 @@ export const SettingsScreen: FC<SettingsScreenProps> = ({ stage, onCancel, onCon
     // new-writein input
     const [newWriteIn, setNewWriteIn] = useState('');
 
-    const handleSave = () => {
+    const handleSave = async () => {
         console.log('Saving settings:', settings);
         
         if (isNewGame) {
@@ -191,6 +193,13 @@ export const SettingsScreen: FC<SettingsScreenProps> = ({ stage, onCancel, onCon
         save.tone = settings.tone;
 
         stage().saveGame();
+
+        // New-game only: if the player named a first summon by URL, distill them now as the chosen
+        // first active summon. On failure we proceed silently - the player still gets a normal start.
+        if (isNewGame && settings.firstSummonUrl.trim()) {
+            await stage().firstSummonFromUrl(settings.firstSummonUrl);
+        }
+
         onConfirm();
     };
 
@@ -405,6 +414,28 @@ export const SettingsScreen: FC<SettingsScreenProps> = ({ stage, onCancel, onCon
                             </div>
 
                             {/* City / Setting Name */}
+                            {isNewGame && (
+                                <div>
+                                    <label
+                                        htmlFor="first-summon-url"
+                                        style={{ display: 'block', color: '#b066ff', fontSize: '14px', fontWeight: 'bold', marginBottom: '8px' }}
+                                    >
+                                        First Summon (optional)
+                                    </label>
+                                    <TextInput
+                                        id="first-summon-url"
+                                        fullWidth
+                                        value={settings.firstSummonUrl}
+                                        onChange={(e) => handleInputChange('firstSummonUrl', e.target.value)}
+                                        placeholder="Paste a Chub character URL to choose your first summon"
+                                        style={{ fontSize: '16px' }}
+                                    />
+                                    <div style={{ fontSize: '12px', opacity: 0.6, marginTop: '6px' }}>
+                                        Leave blank to be offered summons at random when you begin. The app binds this specific person as your first.
+                                    </div>
+                                </div>
+                            )}
+
                             {isNewGame && (
                                 <div>
                                     <label
