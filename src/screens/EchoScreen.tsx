@@ -162,7 +162,12 @@ export const EchoScreen: FC<EchoScreenProps> = ({ stage, setScreenType }) => {
 
 	return (
 		<div style={{ position: 'relative', width: '100vw', height: '100vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-			<BlurredBackground imageUrl={portraitUrl} />
+			{/* Background layer: absolutely positioned BEHIND all content and click-through. Used
+			    self-closing (not as a wrapper), so it must not sit in the flex flow or intercept
+			    pointer events - otherwise it covers the card and every button stops responding. */}
+			<div style={{ position: 'absolute', inset: 0, zIndex: 0, pointerEvents: 'none' }}>
+				<BlurredBackground imageUrl={portraitUrl} />
+			</div>
 
 			{/* Header */}
 			<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', zIndex: 2 }}>
@@ -327,12 +332,15 @@ export const EchoScreen: FC<EchoScreenProps> = ({ stage, setScreenType }) => {
 				<ActorDetailScreen actor={candidate} stage={stage} onClose={() => setShowDetail(false)} />
 			)}
 
-			{/* hidden debug hotspot: lower-left corner, double-click to open the curation box */}
+			{/* hidden debug hotspot: lower-left corner, double-click to open the curation box.
+			    A faint dot marks it so it's findable during playtesting without being obtrusive. */}
 			<div
 				onClick={onCornerClick}
-				style={{ position: 'absolute', left: 0, bottom: 0, width: 56, height: 56, zIndex: 6, cursor: 'default' }}
-				aria-hidden="true"
-			/>
+				title="Debug: double-click to curate reserve"
+				style={{ position: 'absolute', left: 0, bottom: 0, width: 56, height: 56, zIndex: 6, cursor: 'default', display: 'flex', alignItems: 'flex-end', justifyContent: 'flex-start', padding: 6, boxSizing: 'border-box' }}
+			>
+				<div style={{ width: 7, height: 7, borderRadius: '50%', background: debugOpen ? '#b066ff' : 'rgba(176,102,255,0.28)' }} />
+			</div>
 
 			{/* debug curation panel */}
 			{debugOpen && (
