@@ -187,7 +187,7 @@ export const MenuScreen: FC<MenuScreenProps> = ({ stage, setScreenType }) => {
                             initial={{ opacity: 0, y: -6 }}
                             animate={{ opacity: 1, y: 0 }}
                             transition={{ duration: 0.6 }}
-                            style={{ width: '82%', maxHeight: '24%', objectFit: 'contain', pointerEvents: 'none', userSelect: 'none' }}
+                            style={{ width: '72%', maxHeight: '24%', objectFit: 'contain', pointerEvents: 'none', userSelect: 'none' }}
                         />
 
                         {/* Menu buttons: green button art with text overlaid */}
@@ -204,7 +204,7 @@ export const MenuScreen: FC<MenuScreenProps> = ({ stage, setScreenType }) => {
                                     transition={{ opacity: { delay: 0.3 + index * 0.1, duration: 0.4 }, scale: { duration: 0.15 } }}
                                     style={{
                                         position: 'relative',
-                                        width: '68%',
+                                        width: '65%',
                                         height: 'clamp(30px, 6.5vh, 62px)', // zero-margin pill art fills this exactly; narrower so it sits within the glass
                                         border: 'none', background: 'transparent', padding: 0, cursor: 'pointer',
                                         display: 'flex', alignItems: 'center', justifyContent: 'center',
