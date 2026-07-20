@@ -176,7 +176,7 @@ export const MenuScreen: FC<MenuScreenProps> = ({ stage, setScreenType }) => {
                         percentages of the hand-image box. ===== */}
                     <div style={{
                         position: 'absolute',
-                        top: '24%', left: '21%', width: '50%', height: '62%',
+                        top: '24%', left: '22.5%', width: '47%', height: '62%',
                         display: 'flex', flexDirection: 'column', alignItems: 'center',
                         gap: 'clamp(4px, 1vh, 10px)',
                     }}>
