@@ -123,163 +123,113 @@ export const MenuScreen: FC<MenuScreenProps> = ({ stage, setScreenType }) => {
         return stage().getAllSaves().every(save => save);
     }
 
-    const menuButtons = [
-        ...(saveExists() ? [{ 
-            key: 'continue', 
-            label: 'Continue', 
-            onClick: handleContinue,
-            enabled: !disableAllButtons,
-            tooltip: disableAllButtons ? 'Currently unavailable' : 'Resume your current game',
-            icon: PlayArrow
-        }] : []),
-        { 
-            key: 'new', 
-            label: 'New Game', 
-            onClick: handleNewGame,
-            enabled: !disableAllButtons && !noSaveSlotsAvailable(),
-            tooltip: disableAllButtons ? 'Currently unavailable' : (noSaveSlotsAvailable() ? 'No save slots remaining; delete a save to start a new game' : 'Start a fresh playthrough'),
-            icon: FiberNew
-        },
-        ...(saveExists() && stage().initialized ? [{
-            key: 'quicksave',
-            label: 'Quick Save',
-            onClick: () => {
-                stage().saveGame();
-                setTooltip('Game saved!', Save, undefined, 2000);
-            },
-            enabled: !disableAllButtons,
-            tooltip: disableAllButtons ? 'Currently unavailable' : 'Quickly save your current progress',
-            icon: Save,
-        }] : []),
-        {
-            key: 'save',
-            label: 'Save Game',
-            onClick: handleSave,
-            enabled: !disableAllButtons && stage().initialized,
-            tooltip: disableAllButtons ? 'Currently unavailable' : 'Save progress to a specific slot',
-            icon: SaveAlt
-        },
-        { 
-            key: 'load', 
-            label: 'Load Game', 
-            onClick: handleLoad,
-            enabled: !disableAllButtons,
-            tooltip: disableAllButtons ? 'Currently unavailable' : 'Load a previously saved game',
-            icon: Folder
-        },
-        { 
-            key: 'settings', 
-            label: 'Settings', 
-            onClick: handleSettings,
-            enabled: !disableAllButtons,
-            tooltip: disableAllButtons ? 'Currently unavailable' : 'Adjust game settings and preferences',
-            icon: Settings
-        }
+
+    // Title-screen art (hosted). The hand+phone is the stage; logo sits at the top of the screen,
+    // menu buttons stack below it, all within the phone's bezel.
+    const ART = {
+        logo: 'https://cdn.imgchest.com/files/d667a55d5ea5.png',
+        button: 'https://cdn.imgchest.com/files/83288ab7c48e.png',
+        hand: 'https://cdn.imgchest.com/files/f17e0d8d37d4.png',
+        background: 'https://cdn.imgchest.com/files/58d55f085879.png',
+    };
+
+    // Only the four title-screen actions Joseph specified (no Save Game from the title).
+    const titleButtons = [
+        ...(saveExists() ? [{ key: 'continue', label: 'Continue', onClick: handleContinue }] : []),
+        { key: 'new', label: 'New Game', onClick: handleNewGame },
+        { key: 'load', label: 'Load Game', onClick: handleLoad },
+        { key: 'settings', label: 'Settings', onClick: handleSettings },
     ];
 
     return (
-        <BlurredBackground
-            imageUrl="https://i.imgur.com/9hF0qda.gif" //https://media.charhub.io/41b7b65d-839b-4d31-8c11-64ee50e817df/0fc1e223-ad07-41c4-bdae-c9545d5c5e34.png"
-            overlay="linear-gradient(45deg, rgba(0,17,34,0.3) 0%, rgba(0,34,68,0.3) 100%)"
-        >
-            <div 
-                className="menu-screen" 
-                style={{ 
-                    display: 'flex', 
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    height: '100vh', 
-                    width: '100vw'
-                }}
-            >
-            {/* Background grid effect */}
-            <GridOverlay />
+        <div style={{ position: 'relative', width: '100vw', height: '100vh', overflow: 'hidden' }}>
+            {/* Slightly blurry city-at-night background */}
+            <div style={{
+                position: 'absolute', inset: 0,
+                backgroundImage: `url(${ART.background})`,
+                backgroundSize: 'cover', backgroundPosition: 'center',
+                filter: 'blur(4px)', transform: 'scale(1.06)', // scale hides blur edge-bleed
+                zIndex: 0,
+            }} />
+            <div style={{ position: 'absolute', inset: 0, background: 'rgba(4,6,16,0.35)', zIndex: 0 }} />
 
-            {/* Main menu container */}
-            <motion.div
-                initial={{ opacity: 0, y: 50 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.6, ease: 'easeOut' }}
-                className="glass-panel-bright"
-                style={{
-                    padding: 'clamp(20px, 5vh, 40px) clamp(20px, 5vw, 40px)',
-                    minWidth: '300px',
-                    maxWidth: '90vw',
-                    maxHeight: '90vh',
-                    overflow: 'auto',
-                    boxSizing: 'border-box',
-                }}
-            >
-                {/* Title */}
+            {/* The hand + phone group, gently wobbling as if held. The buttons live INSIDE this group
+                so they wobble in lockstep with the phone (they never drift relative to the bezel). */}
+            <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1 }}>
                 <motion.div
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    transition={{ delay: 0.3, duration: 0.5 }}
-                >
-                    <Title variant="glow" style={{ textAlign: 'center', marginBottom: 'clamp(20px, 5vh, 40px)', fontSize: 'clamp(18px, 5vw, 28px)' }}>
-                        The Spire
-                    </Title>
-                </motion.div>
-
-                {/* Menu buttons */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 'clamp(10px, 2vh, 15px)' }}>
-                    {menuButtons.map((button, index) => (
-                        <motion.div
-                            key={button.key}
-                            initial={{ opacity: 0, x: -30 }}
-                            animate={{ 
-                                opacity: 1, 
-                                x: hoveredButton === button.key && button.enabled ? 10 : 0
-                            }}
-                            transition={{ 
-                                opacity: { delay: 0.4 + (index * 0.1), duration: 0.4, ease: 'easeOut' },
-                                x: { duration: 0.2, ease: 'easeOut' }
-                            }}
-                            onMouseEnter={() => {
-                                setHoveredButton(button.enabled ? button.key : null);
-                                setTooltip(button.tooltip, button.icon);
-                            }}
-                            onMouseLeave={() => {
-                                setHoveredButton(null);
-                                clearTooltip();
-                            }}
-                        >
-                            <Button
-                                variant="menu"
-                                whileTap={{ scale: button.enabled ? 0.95 : 1 }}
-                                onClick={button.enabled ? button.onClick : undefined}
-                                disabled={!button.enabled}
-                                style={{
-                                    width: '100%',
-                                    fontSize: 'clamp(12px, 2.5vw, 16px)',
-                                    padding: 'clamp(8px, 1.5vh, 12px) clamp(16px, 3vw, 24px)',
-                                    background: button.enabled && hoveredButton === button.key 
-                                        ? 'rgba(176, 102, 255, 0.2)' 
-                                        : button.enabled ? 'transparent' : 'rgba(18, 8, 32, 0.5)'
-                                }}
-                            >
-                                {button.label}
-                            </Button>
-                        </motion.div>
-                    ))}
-                </div>
-
-                {/* Subtitle/version info */}
-                <motion.div
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    transition={{ delay: 0.8, duration: 0.5 }}
-                    style={{
-                        textAlign: 'center',
-                        marginTop: 'clamp(20px, 4vh, 30px)',
-                        color: 'rgba(176, 102, 255, 0.6)',
-                        fontSize: 'clamp(10px, 1.5vw, 12px)',
+                    style={{ position: 'relative', height: 'min(92vh, 720px)', aspectRatio: '1024 / 1536' }}
+                    animate={{
+                        // Very slight, slow, irregular drift + rotation - a held-hand idle, not a shake.
+                        x: [0, 3, -2, 2, -3, 0],
+                        y: [0, -3, 2, -2, 3, 0],
+                        rotate: [0, 0.5, -0.4, 0.3, -0.5, 0],
                     }}
+                    transition={{ duration: 9, repeat: Infinity, ease: 'easeInOut' }}
                 >
-                    The Summoner Game - alpha
+                    {/* Hand holding the phone (fills the group) */}
+                    <img src={ART.hand} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain', pointerEvents: 'none', userSelect: 'none' }} />
+
+                    {/* Phone screen content, positioned within the black glass of the phone.
+                        ===== TUNING: these four values place the content box over the phone's screen.
+                        If the logo/buttons sit too high/low or off the glass, nudge these. They are
+                        percentages of the hand-image box. Measured by eye from the reference art;
+                        expect to fine-tune once against the live render. ===== */}
+                    <div style={{
+                        position: 'absolute',
+                        top: '20%', left: '28%', width: '44%', height: '46%',
+                        display: 'flex', flexDirection: 'column', alignItems: 'center',
+                        gap: 'clamp(6px, 1.4vh, 14px)',
+                    }}>
+                        {/* Logo at the top of the phone, fit within the screen width */}
+                        <motion.img
+                            src={ART.logo}
+                            alt="The Summoner Game"
+                            initial={{ opacity: 0, y: -6 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ duration: 0.6 }}
+                            style={{ width: '100%', maxHeight: '30%', objectFit: 'contain', pointerEvents: 'none', userSelect: 'none' }}
+                        />
+
+                        {/* Menu buttons: green button art with text overlaid */}
+                        <div style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 'clamp(4px, 1vh, 10px)', marginTop: 'clamp(2px, 1vh, 8px)' }}>
+                            {titleButtons.map((button, index) => (
+                                <motion.button
+                                    key={button.key}
+                                    onClick={button.onClick}
+                                    onMouseEnter={() => setHoveredButton(button.key)}
+                                    onMouseLeave={() => setHoveredButton(null)}
+                                    initial={{ opacity: 0, y: 8 }}
+                                    animate={{ opacity: 1, y: 0, scale: hoveredButton === button.key ? 1.04 : 1 }}
+                                    whileTap={{ scale: 0.96 }}
+                                    transition={{ opacity: { delay: 0.3 + index * 0.1, duration: 0.4 }, scale: { duration: 0.15 } }}
+                                    style={{
+                                        position: 'relative',
+                                        width: '82%',
+                                        aspectRatio: '1512 / 470',
+                                        border: 'none', background: 'transparent', padding: 0, cursor: 'pointer',
+                                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                        filter: hoveredButton === button.key ? 'brightness(1.15) drop-shadow(0 0 6px rgba(80,255,80,0.5))' : 'none',
+                                    }}
+                                >
+                                    <img src={ART.button} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'fill', pointerEvents: 'none', userSelect: 'none' }} />
+                                    <span style={{
+                                        position: 'relative', zIndex: 1,
+                                        color: '#fff', fontWeight: 800,
+                                        fontSize: 'clamp(9px, 1.5vw, 16px)',
+                                        letterSpacing: '0.03em',
+                                        textShadow: '0 1px 3px rgba(0,0,0,0.7)',
+                                        whiteSpace: 'nowrap',
+                                    }}>{button.label}</span>
+                                </motion.button>
+                            ))}
+                        </div>
+                    </div>
                 </motion.div>
-            </motion.div>
+            </div>
+
+            {/* Version tag, bottom corner, outside the phone */}
+            <div style={{ position: 'absolute', bottom: 10, right: 14, zIndex: 2, color: 'rgba(255,255,255,0.5)', fontSize: 'clamp(9px, 1.2vw, 12px)' }}>
+                The Summoner Game - alpha
             </div>
 
             {/* Settings Modal */}
@@ -309,6 +259,6 @@ export const MenuScreen: FC<MenuScreenProps> = ({ stage, setScreenType }) => {
                     onClose={() => setShowContentManagement(false)}
                 />
             )}
-        </BlurredBackground>
+        </div>
     );
 };
