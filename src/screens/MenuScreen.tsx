@@ -187,7 +187,7 @@ export const MenuScreen: FC<MenuScreenProps> = ({ stage, setScreenType }) => {
                             initial={{ opacity: 0, y: -6 }}
                             animate={{ opacity: 1, y: 0 }}
                             transition={{ duration: 0.6 }}
-                            style={{ width: '72%', maxHeight: '24%', objectFit: 'contain', pointerEvents: 'none', userSelect: 'none' }}
+                            style={{ width: '68%', maxHeight: '24%', objectFit: 'contain', pointerEvents: 'none', userSelect: 'none' }}
                         />
 
                         {/* Menu buttons: green button art with text overlaid */}
@@ -199,9 +199,8 @@ export const MenuScreen: FC<MenuScreenProps> = ({ stage, setScreenType }) => {
                                     onMouseEnter={() => setHoveredButton(button.key)}
                                     onMouseLeave={() => setHoveredButton(null)}
                                     initial={{ opacity: 0, y: 8 }}
-                                    animate={{ opacity: 1, y: 0, scale: hoveredButton === button.key ? 1.04 : 1 }}
-                                    whileTap={{ scale: 0.96 }}
-                                    transition={{ opacity: { delay: 0.3 + index * 0.1, duration: 0.4 }, scale: { duration: 0.15 } }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    transition={{ opacity: { delay: 0.3 + index * 0.1, duration: 0.4 } }}
                                     style={{
                                         position: 'relative',
                                         width: '65%',
