@@ -168,7 +168,7 @@ export const MenuScreen: FC<MenuScreenProps> = ({ stage, setScreenType }) => {
                     transition={{ duration: 9, repeat: Infinity, ease: 'easeInOut' }}
                 >
                     {/* Hand holding the phone (fills the group) */}
-                    <img src={ART.hand} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain', pointerEvents: 'none', userSelect: 'none' }} />
+                    <img src={ART.hand} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '105%', objectFit: 'contain', pointerEvents: 'none', userSelect: 'none' }} />
 
                     {/* Phone screen content, positioned within the black glass of the phone.
                         ===== TUNING: these four values place the content box over the phone's screen.

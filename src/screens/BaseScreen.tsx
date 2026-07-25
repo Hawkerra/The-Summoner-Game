@@ -5,6 +5,7 @@ import { ShopScreen } from './ShopScreen';
 import { EchoScreen } from './EchoScreen';
 import { CryoScreen } from './CryoScreen';
 import { MenuScreen } from './MenuScreen';
+import { GameMenuScreen } from './GameMenuScreen';
 import { LoadingScreen } from './LoadingScreen';
 import { TooltipProvider } from '../contexts/TooltipContext';
 import TooltipBar from '../components/TooltipBar';
@@ -18,6 +19,7 @@ import { SkitScreen } from './SkitScreen';
 
 export enum ScreenType {
     MENU = 'menu',
+    GAMEMENU = 'gamemenu',
     LOADING = 'loading',
     STATION = 'station',
     ECHO = 'echo',
@@ -61,6 +63,10 @@ const BaseScreenContent: FC<{ stage: () => Stage }> = ({ stage }) => {
             {screenType === ScreenType.MENU && (
                 // Render menu screen
                 <MenuScreen stage={stage} setScreenType={setScreenType} />
+            )}
+            {screenType === ScreenType.GAMEMENU && (
+                // In-game typeset menu (Home's Menu button) - where the player saves
+                <GameMenuScreen stage={stage} setScreenType={setScreenType} />
             )}
             {screenType === ScreenType.LOADING && (
                 // Render loading screen

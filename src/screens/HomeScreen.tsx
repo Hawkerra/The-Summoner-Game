@@ -125,7 +125,7 @@ export const HomeScreen: FC<HomeScreenProps> = ({ stage, setScreenType }) => {
                         <Button onClick={() => setScreenType(ScreenType.ECHO)}>Summon</Button>
                         <Button onClick={() => setScreenType(ScreenType.SHOP)}>Shop ({stage().getSp()} SP)</Button>
                         <Button onClick={() => setScreenType(ScreenType.CRYO)}>Summons</Button>
-                        <Button onClick={() => setScreenType(ScreenType.MENU)}>Menu</Button>
+                        <Button onClick={() => setScreenType(ScreenType.GAMEMENU)}>Menu</Button>
                     </div>
                 </div>
 
